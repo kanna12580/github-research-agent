@@ -7,7 +7,7 @@ Generates a structured, well-formatted research report with source attribution.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from app.config import get_settings
 from app.graph.state import Citation, Evidence
@@ -106,6 +106,23 @@ class ReportAgent:
         evidence_list: list[Evidence],
         reflection: dict | None,
     ) -> tuple[str, list[Citation]]:
+        """Generate the final report without streaming callbacks."""
+        return self.generate_stream(
+            user_query=user_query,
+            analysis=analysis,
+            evidence_list=evidence_list,
+            reflection=reflection,
+        )
+
+    def generate_stream(
+        self,
+        user_query: str,
+        analysis: str,
+        evidence_list: list[Evidence],
+        reflection: dict | None,
+        on_chunk: Callable[[str], None] | None = None,
+        on_citation: Callable[[Citation], None] | None = None,
+    ) -> tuple[str, list[Citation]]:
         """
         Generate the final research report.
 
@@ -120,33 +137,10 @@ class ReportAgent:
         """
         logger.info(f"Report: generating report for query: {user_query[:80]}")
 
-        # Build citation index
-        citations: list[Citation] = []
-        evidence_map: dict[str, Citation] = {}
-
-        for i, ev in enumerate(evidence_list[:30], 1):
-            citation_id = f"citation:{i}"
-            if getattr(ev, 'citation', None):
-                citation_text = ev.citation
-                citation = Citation(
-                    citation_id=citation_id,
-                    source_url=ev.source_url or "",
-                    source_title=ev.source_title or f"Source {i}",
-                    source_type=ev.source_type,
-                    extracted_evidence=citation_text[:300] if citation_text else ev.content[:300],
-                    relevance_score=0.5,
-                )
-            else:
-                citation = Citation(
-                    citation_id=citation_id,
-                    source_url=ev.source_url or "",
-                    source_title=ev.source_title or f"Source {i}",
-                    source_type=ev.source_type,
-                    extracted_evidence=ev.content[:300],
-                    relevance_score=0.5,
-                )
-            citations.append(citation)
-            evidence_map[ev.evidence_id] = citation
+        citations = self._build_citations(evidence_list)
+        for citation in citations:
+            if on_citation:
+                on_citation(citation)
 
         # Build reference list
         ref_list = self._build_reference_list(citations)
@@ -186,27 +180,71 @@ Make sure every factual claim has a [citation:N] reference."""
         ]
 
         try:
-            response = self.client.chat.completions.create(
+            stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.3,
                 max_tokens=8192,
+                stream=True,
             )
+            chunks: list[str] = []
+            for event in stream:
+                if not event.choices:
+                    continue
+                delta = event.choices[0].delta.content or ""
+                if not delta:
+                    continue
+                chunks.append(delta)
+                if on_chunk:
+                    on_chunk(delta)
 
-            content = response.choices[0].message.content
+            content = "".join(chunks).strip()
             if not content:
-                return self._fallback_report(user_query, evidence_list, citations)
+                content = self._fallback_report(user_query, evidence_list, citations)
+                self._emit_fallback_chunks(content, on_chunk)
 
             # Append references section if not present
             if "## References" not in content and "## 参考" not in content:
-                content += f"\n\n---\n\n## References\n\n{ref_list}"
+                references_block = f"\n\n---\n\n## References\n\n{ref_list}"
+                content += references_block
+                if on_chunk:
+                    on_chunk(references_block)
 
             logger.info(f"Report: generated {len(content)} chars, {len(citations)} citations")
             return content, citations
 
         except Exception as e:
             logger.error(f"Report generation error: {e}")
-            return self._fallback_report(user_query, evidence_list, citations), citations
+            fallback = self._fallback_report(user_query, evidence_list, citations)
+            self._emit_fallback_chunks(fallback, on_chunk)
+            return fallback, citations
+
+    def _build_citations(self, evidence_list: list[Evidence]) -> list[Citation]:
+        """Build a stable citation list from collected evidence."""
+        citations: list[Citation] = []
+        for i, ev in enumerate(evidence_list[:30], 1):
+            citation_text = getattr(ev, "citation", None)
+            citations.append(Citation(
+                citation_id=f"citation:{i}",
+                source_url=ev.source_url or "",
+                source_title=ev.source_title or f"Source {i}",
+                source_type=ev.source_type,
+                extracted_evidence=(citation_text[:300] if citation_text else ev.content[:300]),
+                relevance_score=0.5,
+            ))
+        return citations
+
+    def _emit_fallback_chunks(
+        self,
+        content: str,
+        on_chunk: Callable[[str], None] | None,
+        chunk_size: int = 800,
+    ) -> None:
+        """Emit chunk events for fallback/non-streamed content."""
+        if not on_chunk:
+            return
+        for start in range(0, len(content), chunk_size):
+            on_chunk(content[start:start + chunk_size])
 
     def _format_evidence(self, evidence_list: list[Evidence], citations: list[Citation]) -> str:
         """Format evidence with citation numbers."""

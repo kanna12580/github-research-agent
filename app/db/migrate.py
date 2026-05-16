@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS documents (
 
 -- Vector similarity index (IVF for approximate nearest neighbor)
 CREATE INDEX IF NOT EXISTS idx_documents_embedding
-    ON documents USING ivfflat (embedding cosine_ops)
+    ON documents USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
 -- Full-text search index (Chinese and English)

@@ -12,18 +12,19 @@ class TestResearchState:
         state = create_initial_state("测试研究查询", "test-123")
         assert state["task_id"] == "test-123"
         assert state["user_query"] == "测试研究查询"
-        assert state["research_plan"] == []
         assert state["status"] == "pending"
         assert state["revision_count"] == 0
+        assert state["search_results"] == []
 
     def test_research_state_has_required_keys(self):
         state = create_initial_state("query")
         required_keys = {
-            "task_id", "user_query", "created_at", "research_plan",
-            "current_step_index", "search_results", "browser_results",
-            "rag_results", "aggregated_evidence", "analysis",
-            "reflection_result", "revision_needed", "revision_count",
-            "final_report", "citations", "agent_trace", "errors", "status"
+            "task_id", "user_query", "created_at", "status", "session",
+            "dag", "current_executing_nodes", "completed_nodes",
+            "tool_histories", "collected_evidence", "verification",
+            "search_results", "browser_results", "rag_results", "aggregated_evidence",
+            "revision_needed", "revision_count", "analysis",
+            "final_report", "citations", "agent_trace", "errors"
         }
         assert set(state.keys()) == required_keys
 
@@ -38,7 +39,7 @@ class TestPlanStep:
         assert step.status == StepStatus.PENDING
         assert step.retry_count == 0
         assert step.evidence_ids == []
-        assert len(step.step_id) == 8
+        assert len(step.step_id) == 7
 
     def test_plan_step_serialization(self):
         step = PlanStep(
@@ -80,17 +81,43 @@ class TestGraphCompilation:
         graph = compile_research_graph()
         assert graph is not None
         # Verify it's a compiled graph
-        assert hasattr(graph, "graph")
+        assert hasattr(graph, "builder")
         assert hasattr(graph, "config")
 
     def test_graph_has_required_nodes(self):
         graph = compile_research_graph()
-        nodes = set(graph.graph.nodes)
+        nodes = set(graph.builder.nodes)
         required_nodes = {
             "planner", "search", "browser", "rag",
             "analyst", "reflection", "report"
         }
         assert required_nodes.issubset(nodes)
+
+    def test_search_node_returns_tool_history(self):
+        from unittest.mock import patch
+
+        from app.graph.compiler import search_node
+        from app.graph.state import AgentType, DAGDefinition, PlanNode, SearchResult, serialize_dag
+
+        node = PlanNode(node_type="search", query="test query")
+        state = create_initial_state("test query", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+        state["executing_nodes"] = [node.node_id]
+
+        with patch("app.agents.search.SearchAgent.execute_search", return_value=[
+            SearchResult(
+                url="https://example.com",
+                title="Example",
+                snippet="Example snippet",
+                relevance_score=0.9,
+            )
+        ]):
+            result = search_node(state)
+
+        assert len(result["tool_histories"]) == 1
+        history = result["tool_histories"][0]
+        assert history["agent_type"] == AgentType.SEARCH.value
+        assert history["tool_calls"][0]["status"] == "success"
 
 
 if __name__ == "__main__":

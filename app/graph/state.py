@@ -110,9 +110,9 @@ class PlanNode(BaseModel):
     """
     node_id: str = Field(default_factory=lambda: f"n{uuid.uuid4().hex[:6]}")
     # 节点类型：对应工具驱动中的 Agent 类型
-    node_type: Literal["search", "browser", "rag", "analyst", "reflection", "report"]
+    node_type: Literal["search", "browser", "rag", "analyst", "reflection", "report"] | None = None
     # 该节点要执行的具体查询
-    query: str
+    query: str = ""
     # 依赖的前置节点（只有在这些节点完成后才能执行）
     depends_on: list[str] = Field(default_factory=list)
     # 是否可以并行执行（与 depends_on 互斥）
@@ -160,6 +160,8 @@ class PlanNode(BaseModel):
         # step_id alias
         if not self.step_id:
             object.__setattr__(self, "step_id", self.node_id)
+        if not self.node_type or not self.query:
+            raise ValueError("PlanNode requires either node_type/query or assigned_agent/target_query")
 
 
 class PlanEdge(BaseModel):
@@ -518,6 +520,11 @@ class Evidence(BaseModel):
     # Token 消耗估计
     tokens_estimate: int = 0
 
+    @property
+    def agent_type(self) -> AgentType:
+        """Backward-compatible alias for older agent_type readers."""
+        return self.collected_by
+
 
 # ==============================================================
 # TypedDict State
@@ -654,6 +661,10 @@ def create_initial_state(
 
         tool_histories=[],
         collected_evidence=[],
+        search_results=[],
+        browser_results=[],
+        rag_results=[],
+        aggregated_evidence=[],
 
         verification=None,
         revision_needed=False,

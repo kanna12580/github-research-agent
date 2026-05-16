@@ -2,6 +2,7 @@
 Tests for individual agent implementations.
 """
 
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from app.graph.state import PlanStep, StepStatus, Evidence, AgentType
@@ -22,13 +23,14 @@ class TestPlannerAgent:
         agent._client.chat.completions.create.side_effect = Exception("API Error")
 
         steps = agent.create_plan("中国新能源车市场分析")
-        assert len(steps) == 3
-        assert all(s.status == StepStatus.PENDING for s in steps)
+        assert len(steps) == 4
+        assert all(s["status"] == StepStatus.PENDING for s in steps)
         # Should have one of each agent type
-        agent_types = {s.assigned_agent for s in steps}
+        agent_types = {s.get("assigned_agent") or s.get("node_type") for s in steps}
         assert "search" in agent_types
         assert "browser" in agent_types
         assert "rag" in agent_types
+        assert "analyst" in agent_types
 
 
 class TestSearchAgent:
@@ -65,23 +67,23 @@ class TestBrowserAgent:
         agent = BrowserAgent()
 
         # News article
-        result = agent._classify_page("https://news.example.com/article/123", MagicMock())
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://news.example.com/article/123"))
         assert result == PageType.NEWS_ARTICLE
 
         # GitHub
-        result = agent._classify_page("https://github.com/user/repo", MagicMock())
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://github.com/user/repo"))
         assert result == PageType.TECHNICAL
 
         # Search result
-        result = agent._classify_page("https://www.google.com/search?q=AI", MagicMock())
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://www.google.com/search?q=AI"))
         assert result == PageType.SEARCH_RESULT
 
         # Social
-        result = agent._classify_page("https://zhihu.com/question/123", MagicMock())
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://zhihu.com/question/123"))
         assert result == PageType.SOCIAL
 
         # General
-        result = agent._classify_page("https://example.com/page", MagicMock())
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://example.com/page"))
         assert result == PageType.GENERAL
 
     def test_fallback_result(self):
@@ -117,7 +119,7 @@ class TestAnalystAgent:
                 source_title="测试来源",
                 source_url="https://test.com",
                 source_type="web",
-                agent_type=AgentType.SEARCH,
+                collected_by=AgentType.SEARCH,
             )
         ]
         formatted = agent._format_evidence(evidence)
@@ -136,8 +138,9 @@ class TestReflectionAgent:
 
         agent = ReflectionAgent()
         result = agent._default_result()
-        assert result.overall_confidence == 0.5
-        assert result.needs_revision is False
+        assert result.overall_confidence == 0.0
+        assert result.needs_revision is True
+        assert "Reflection validation failed" in (result.revision_focus or "")
         assert len(result.hallucinated_claims) == 0
 
 
@@ -146,6 +149,40 @@ class TestReportAgent:
         from app.agents.report import ReportAgent
         agent = ReportAgent()
         assert agent is not None
+
+    def test_generate_stream_emits_chunks_and_citations(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.return_value = [
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="# Title\n"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="Body [citation:1]"))]),
+        ]
+
+        chunks = []
+        citations = []
+        report, report_citations = agent.generate_stream(
+            user_query="Test topic",
+            analysis="Test analysis",
+            evidence_list=[
+                Evidence(
+                    content="Evidence body",
+                    source_title="Source 1",
+                    source_url="https://example.com",
+                    source_type="web",
+                    collected_by=AgentType.SEARCH,
+                )
+            ],
+            reflection={"overall_confidence": 0.9},
+            on_chunk=chunks.append,
+            on_citation=citations.append,
+        )
+
+        assert report.startswith("# Title")
+        assert len(chunks) >= 2
+        assert len(citations) == 1
+        assert len(report_citations) == 1
 
 
 if __name__ == "__main__":

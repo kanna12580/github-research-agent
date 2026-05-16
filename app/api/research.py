@@ -22,6 +22,15 @@ from app.db.connection import get_db_pool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/research", tags=["research"])
+ACCUMULATING_STATE_KEYS = {
+    "agent_trace",
+    "tool_histories",
+    "collected_evidence",
+    "search_results",
+    "browser_results",
+    "rag_results",
+    "aggregated_evidence",
+}
 
 
 # ==============================================================
@@ -196,16 +205,28 @@ async def get_research_result(session_id: str):
             """,
             session_id,
         )
+        citation_rows = await conn.fetch(
+            """
+            SELECT citation_id, source_url, source_title, source_type,
+                   extracted_evidence, relevance_score, access_timestamp
+            FROM citations
+            WHERE session_id = $1::uuid
+            ORDER BY CAST(SPLIT_PART(citation_id, ':', 2) AS INTEGER)
+            """,
+            session_id,
+        )
 
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    citations = [dict(citation) for citation in citation_rows] if citation_rows else row["citations"]
 
     return {
         "session_id": str(row["id"]),
         "query": row["user_query"],
         "status": row["status"],
         "report": row["final_report"],
-        "citations": row["citations"],
+        "citations": citations,
         "agent_trace": row["agent_trace"],
         "created_at": row["created_at"].isoformat(),
         "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
@@ -242,6 +263,7 @@ async def run_research_workflow(
 
         # Create initial state
         state = create_initial_state(query, session_id)
+        state["session"]["max_revisions"] = max_revision
 
         # Compile graph
         graph = compile_research_graph()
@@ -256,12 +278,18 @@ async def run_research_workflow(
         # Run the graph and accumulate state from all chunks
         # FIX: Use a dict to accumulate state, not just last chunk
         accumulated_state: dict[str, Any] = {}
+        last_chunk: dict[str, Any] = {}
         async for chunk in graph.astream(state, config):
             # Emit state updates
             if isinstance(chunk, dict):
+                last_chunk = chunk
                 # Merge chunk into accumulated state
                 for key, value in chunk.items():
-                    accumulated_state[key] = value
+                    if key in ACCUMULATING_STATE_KEYS and isinstance(value, list):
+                        accumulated_state.setdefault(key, [])
+                        accumulated_state[key].extend(value)
+                    else:
+                        accumulated_state[key] = value
 
                     if key == "agent_trace":
                         # Forward agent trace events to SSE
@@ -277,30 +305,66 @@ async def run_research_workflow(
 
         # Determine final state
         # Use accumulated state, with fallback to last chunk
-        final_state: dict[str, Any] = accumulated_state if accumulated_state else chunk if chunk else {}
+        final_state: dict[str, Any] = accumulated_state if accumulated_state else last_chunk
 
         # Save results to database
         if final_state:
             pool = await get_db_pool()
             async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE research_sessions
-                    SET status = $1,
-                        final_report = $2,
-                        citations = $3::jsonb,
-                        agent_trace = $4::jsonb,
-                        updated_at = $5,
-                        completed_at = $5
-                    WHERE id = $6::uuid
-                    """,
-                    final_state.get("status", TaskStatus.COMPLETED.value),
-                    final_state.get("final_report", ""),
-                    final_state.get("citations", []),
-                    final_state.get("agent_trace", []),
-                    datetime.utcnow(),
-                    session_id,
-                )
+                completed_at = datetime.utcnow()
+                citations = final_state.get("citations", [])
+                async with conn.transaction():
+                    await conn.execute(
+                        """
+                        UPDATE research_sessions
+                        SET status = $1,
+                            final_report = $2,
+                            citations = $3::jsonb,
+                            agent_trace = $4::jsonb,
+                            updated_at = $5,
+                            completed_at = $5
+                        WHERE id = $6::uuid
+                        """,
+                        final_state.get("status", TaskStatus.COMPLETED.value),
+                        final_state.get("final_report", ""),
+                        citations,
+                        final_state.get("agent_trace", []),
+                        completed_at,
+                        session_id,
+                    )
+                    await conn.execute(
+                        "DELETE FROM citations WHERE session_id = $1::uuid",
+                        session_id,
+                    )
+                    if citations:
+                        await conn.executemany(
+                            """
+                            INSERT INTO citations (
+                                session_id,
+                                citation_id,
+                                source_url,
+                                source_title,
+                                source_type,
+                                extracted_evidence,
+                                relevance_score,
+                                access_timestamp
+                            )
+                            VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
+                            """,
+                            [
+                                (
+                                    session_id,
+                                    citation.get("citation_id"),
+                                    citation.get("source_url"),
+                                    citation.get("source_title"),
+                                    citation.get("source_type", "web"),
+                                    citation.get("extracted_evidence"),
+                                    citation.get("relevance_score", 0.0),
+                                    completed_at,
+                                )
+                                for citation in citations
+                            ],
+                        )
 
         # Emit completion
         await sse.publish(session_id, "done", {

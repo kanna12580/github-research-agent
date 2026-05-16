@@ -90,7 +90,7 @@ def mock_llm_client(mock_llm_response: dict[str, Any]) -> MagicMock:
     client = MagicMock()
     client.api_key = "test-key"
     client.base_url = None
-    client.chat.completions.create = AsyncMock(return_value=MagicMock(**mock_llm_response))
+    client.chat.completions.create = MagicMock(return_value=MagicMock(**mock_llm_response))
     return client
 
 

@@ -216,8 +216,8 @@ Perform a rigorous quality check and return the structured JSON output."""
             verified_claims=0,
             hallucinated_claims=[],
             conflicts=[],
-            citation_coverage=0.5,
-            overall_confidence=0.5,
-            needs_revision=False,
-            revision_focus=None,
+            citation_coverage=0.0,
+            overall_confidence=0.0,
+            needs_revision=True,
+            revision_focus="Reflection validation failed. Re-run verification and inspect evidence coverage.",
         )

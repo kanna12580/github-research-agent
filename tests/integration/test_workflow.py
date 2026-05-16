@@ -19,12 +19,11 @@ class TestResearchWorkflowIntegration:
         state = create_initial_state("Test query", "test-session")
         assert state["task_id"] == "test-session"
         assert state["user_query"] == "Test query"
-        assert state["research_plan"] == []
         assert state["status"] == "pending"
         assert state["revision_count"] == 0
-        assert state["search_results"] == []
-        assert state["browser_results"] == []
-        assert state["rag_results"] == []
+        assert state["tool_histories"] == []
+        assert state["collected_evidence"] == []
+        assert state["current_executing_nodes"] == []
 
     @pytest.mark.asyncio
     async def test_workflow_with_mocked_llm(
@@ -38,7 +37,7 @@ class TestResearchWorkflowIntegration:
         # This test verifies the graph compiles and can be invoked
         graph = compile_research_graph()
         assert graph is not None
-        assert hasattr(graph, "graph")
+        assert hasattr(graph, "builder")
 
     def test_workflow_state_serialization(self, sample_plan_steps: list):
         """Test that plan steps can be serialized and deserialized."""
@@ -81,11 +80,12 @@ class TestAgentCollaboration:
         plan = planner_agent.create_plan("Test query")
 
         # Should have fallback plan (3 steps) since LLM is mocked
-        assert len(plan) == 3
-        agent_types = {step.assigned_agent for step in plan}
+        assert len(plan) == 4
+        agent_types = {step.get("assigned_agent") or step.get("node_type") for step in plan}
         assert "search" in agent_types
         assert "browser" in agent_types
         assert "rag" in agent_types
+        assert "analyst" in agent_types
 
     def test_analyst_validates_evidence(self, analyst_agent: MagicMock):
         """Test that analyst can process evidence."""
@@ -97,7 +97,7 @@ class TestAgentCollaboration:
                 source_title="Test Source",
                 source_url="https://test.com",
                 source_type="web",
-                agent_type=AgentType.SEARCH,
+                collected_by=AgentType.SEARCH,
             )
         ]
 
@@ -115,14 +115,14 @@ class TestAgentCollaboration:
                 content="Some evidence",
                 source_title="Source",
                 source_type="web",
-                agent_type=AgentType.ANALYST,
+                collected_by=AgentType.ANALYST,
             )
         ]
 
         # Should return a ReflectionResult
         result = reflection_agent.reflect("Test query", "Analysis text", evidence)
-        assert result.overall_confidence == 0.5  # Default result on LLM failure
-        assert result.needs_revision is False
+        assert result.overall_confidence == 0.0
+        assert result.needs_revision is True
 
 
 class TestSSEIntegration:
@@ -194,28 +194,35 @@ class TestGraphCompilation:
 
     def test_graph_has_all_nodes(self, research_graph):
         """Test that compiled graph has all required nodes."""
-        nodes = set(research_graph.graph.nodes)
+        nodes = set(research_graph.builder.nodes)
         required_nodes = {
-            "planner", "search", "browser", "rag",
-            "analyst", "reflection", "report",
+            "planner", "dag_executor", "dag_aggregator",
+            "search", "browser", "rag",
+            "analyst", "reflection", "replan", "report",
         }
         assert required_nodes.issubset(nodes)
 
     def test_graph_edges_exist(self, research_graph):
         """Test that expected edges exist in the graph."""
         edges = []
-        for start, end in research_graph.graph.edges:
+        for start, end in research_graph.builder.edges:
             edges.append((start, end))
 
         # Should have edges from START to planner
         assert any(start == "__start__" and end == "planner" for start, end in edges)
 
-        # Should have edges from sub-agents to analyst
+        # Should have planner to dag executor
+        assert any(start == "planner" and end == "dag_executor" for start, end in edges)
+
+        # Should have edges from sub-agents to dag aggregator
         for agent in ["search", "browser", "rag"]:
-            assert any(start == agent and end == "analyst" for start, end in edges)
+            assert any(start == agent and end == "dag_aggregator" for start, end in edges)
 
         # Should have edge from analyst to reflection
         assert any(start == "analyst" and end == "reflection" for start, end in edges)
+
+        # Should have replan loop back into dag executor
+        assert any(start == "replan" and end == "dag_executor" for start, end in edges)
 
         # Should have edge from report to END
         assert any(start == "report" and end == "__end__" for start, end in edges)

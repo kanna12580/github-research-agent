@@ -52,7 +52,7 @@ async def init_db() -> asyncpg.Pool:
         """)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_documents_embedding
-            ON documents USING ivfflat (embedding cosine_ops)
+            ON documents USING ivfflat (embedding vector_cosine_ops)
         """)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_documents_fts
@@ -87,6 +87,10 @@ async def init_db() -> asyncpg.Pool:
                 access_timestamp TIMESTAMP,
                 created_at TIMESTAMP DEFAULT NOW()
             )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_citations_session
+            ON citations (session_id)
         """)
 
     _db_pool = pool

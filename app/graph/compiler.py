@@ -36,7 +36,9 @@ LangGraph StateGraph compiler for the research workflow.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+import time
 from typing import Any
 
 from langgraph.constants import END, START, Send
@@ -71,6 +73,7 @@ def track_tool_call(agent_type: AgentType, tool_name: str):
     """
     def decorator(func):
         async def async_wrapper(state: ResearchState, *args, **kwargs) -> dict:
+            agent_str = agent_type.value
             call_record = ToolCallRecord(
                 agent_type=agent_type,
                 tool_name=tool_name,
@@ -87,22 +90,25 @@ def track_tool_call(agent_type: AgentType, tool_name: str):
             state["tool_histories"].append(history.model_dump())
 
             try:
+                start_time = time.perf_counter()
                 result = await func(state, *args, **kwargs)
-                # Update call result - agent_type stored as string via model_dump()
-                agent_str = agent_type.value
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "success"
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
+                    state["tool_histories"][-1]["tool_calls"][-1]["duration_ms"] = int((time.perf_counter() - start_time) * 1000)
                     state["tool_histories"][-1]["tool_calls"][-1]["result_summary"] = str(result)[:200]
                 return result
             except Exception as e:
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "error"
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
                     state["tool_histories"][-1]["tool_calls"][-1]["error"] = str(e)
                 raise
 
         def sync_wrapper(state: ResearchState, *args, **kwargs) -> dict:
+            agent_str = agent_type.value
             call_record = ToolCallRecord(
                 agent_type=agent_type,
                 tool_name=tool_name,
@@ -116,28 +122,71 @@ def track_tool_call(agent_type: AgentType, tool_name: str):
                 tool_calls=[call_record],
             )
             state["tool_histories"].append(history.model_dump())
-            agent_str = agent_type.value
-
             try:
+                start_time = time.perf_counter()
                 result = func(state, *args, **kwargs)
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "success"
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
+                    state["tool_histories"][-1]["tool_calls"][-1]["duration_ms"] = int((time.perf_counter() - start_time) * 1000)
                     state["tool_histories"][-1]["tool_calls"][-1]["result_summary"] = str(result)[:200]
                 return result
             except Exception as e:
                 if (state["tool_histories"]
                         and state["tool_histories"][-1].get("agent_type") == agent_str):
                     state["tool_histories"][-1]["tool_calls"][-1]["status"] = "error"
+                    state["tool_histories"][-1]["tool_calls"][-1]["completed_at"] = datetime.utcnow().isoformat()
                     state["tool_histories"][-1]["tool_calls"][-1]["error"] = str(e)
                 raise
 
-        import asyncio
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
 
     return decorator
+
+
+def _make_tool_history(
+    *,
+    agent_type: AgentType,
+    tool_name: str,
+    task_id: str | None,
+    query: str,
+) -> dict[str, Any]:
+    """Create a structured tool history entry for a single tool invocation."""
+    history = ToolInvocationHistory(
+        agent_type=agent_type,
+        tool_calls=[ToolCallRecord(
+            agent_type=agent_type,
+            tool_name=tool_name,
+            args={
+                "task_id": task_id,
+                "query": query,
+            },
+            status="running",
+        )],
+    )
+    return history.model_dump()
+
+
+def _finish_tool_history(
+    history: dict[str, Any],
+    *,
+    status: str,
+    result_summary: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Finalize a structured tool history entry."""
+    tool_call = history["tool_calls"][-1]
+    tool_call["status"] = status
+    tool_call["completed_at"] = datetime.utcnow().isoformat()
+    started_at = datetime.fromisoformat(tool_call["started_at"])
+    tool_call["duration_ms"] = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+    if result_summary is not None:
+        tool_call["result_summary"] = result_summary[:200]
+    if error is not None:
+        tool_call["error"] = error
 
 
 # ==============================================================
@@ -274,7 +323,7 @@ def should_continue_dag(state: ResearchState) -> str:
 # 主题 3: 工具 Agent Nodes - Search / Browser / RAG
 # ==============================================================
 
-def search_node(state: ResearchState, executing_nodes: list[str]) -> dict:
+def search_node(state: ResearchState) -> dict:
     """
     Search Agent: 执行搜索工具（主题 3）。
 
@@ -291,6 +340,7 @@ def search_node(state: ResearchState, executing_nodes: list[str]) -> dict:
     from app.observability.trace import emit_event, EventType
 
     dag = deserialize_dag(state["dag"])
+    executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
 
     # 找出当前批次中分配给 search 的节点
     search_nodes = [
@@ -305,9 +355,16 @@ def search_node(state: ResearchState, executing_nodes: list[str]) -> dict:
 
     agent = SearchAgent()
     all_evidence = []
+    tool_histories = []
 
     for node in search_nodes:
         emit_event(state, EventType.TOOL_START, "search", f"Searching: {node.query}")
+        tool_history = _make_tool_history(
+            agent_type=AgentType.SEARCH,
+            tool_name="execute_search",
+            task_id=state.get("task_id"),
+            query=node.query,
+        )
 
         # 更新节点状态为 RUNNING
         node.status = StepStatus.RUNNING
@@ -316,6 +373,11 @@ def search_node(state: ResearchState, executing_nodes: list[str]) -> dict:
             results = agent.execute_search(node.query)
             node.result = {"results": [r.model_dump() for r in results]}
             node.confidence = 0.9 if results else 0.0
+            _finish_tool_history(
+                tool_history,
+                status="success",
+                result_summary=f"{len(results)} search results",
+            )
 
             # 转换为 Evidence
             for r in results:
@@ -336,6 +398,8 @@ def search_node(state: ResearchState, executing_nodes: list[str]) -> dict:
             node.status = StepStatus.FAILED
             node.retry_count += 1
             emit_event(state, EventType.ERROR, "search", f"Search failed: {str(e)}")
+            _finish_tool_history(tool_history, status="error", error=str(e))
+        tool_histories.append(tool_history)
 
     # 更新 DAG
     dag_serialized = serialize_dag(dag)
@@ -349,11 +413,12 @@ def search_node(state: ResearchState, executing_nodes: list[str]) -> dict:
     return {
         "dag": dag_serialized,
         "collected_evidence": [e.model_dump() for e in all_evidence],
+        "tool_histories": tool_histories,
         "agent_trace": trace,
     }
 
 
-def browser_node(state: ResearchState, executing_nodes: list[str]) -> dict:
+def browser_node(state: ResearchState) -> dict:
     """
     Browser Agent: 执行浏览器工具（主题 3）。
 
@@ -370,6 +435,7 @@ def browser_node(state: ResearchState, executing_nodes: list[str]) -> dict:
     from app.observability.trace import emit_event, EventType
 
     dag = deserialize_dag(state["dag"])
+    executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
 
     browser_nodes = [
         n for n in dag.nodes
@@ -383,9 +449,16 @@ def browser_node(state: ResearchState, executing_nodes: list[str]) -> dict:
 
     agent = BrowserAgent()
     all_evidence = []
+    tool_histories = []
 
     for node in browser_nodes:
         emit_event(state, EventType.TOOL_START, "browser", f"Browsing: {node.query}")
+        tool_history = _make_tool_history(
+            agent_type=AgentType.BROWSER,
+            tool_name="execute_browse",
+            task_id=state.get("task_id"),
+            query=node.query,
+        )
 
         node.status = StepStatus.RUNNING
 
@@ -393,6 +466,11 @@ def browser_node(state: ResearchState, executing_nodes: list[str]) -> dict:
             results = agent.execute_browse(node.query)
             node.result = {"results": [r.model_dump() for r in results]}
             node.confidence = 0.85 if results else 0.0
+            _finish_tool_history(
+                tool_history,
+                status="success",
+                result_summary=f"{len(results)} browser pages",
+            )
 
             for r in results:
                 evidence = Evidence(
@@ -412,6 +490,8 @@ def browser_node(state: ResearchState, executing_nodes: list[str]) -> dict:
             node.status = StepStatus.FAILED
             node.retry_count += 1
             emit_event(state, EventType.ERROR, "browser", f"Browse failed: {str(e)}")
+            _finish_tool_history(tool_history, status="error", error=str(e))
+        tool_histories.append(tool_history)
 
     dag_serialized = serialize_dag(dag)
 
@@ -424,11 +504,12 @@ def browser_node(state: ResearchState, executing_nodes: list[str]) -> dict:
     return {
         "dag": dag_serialized,
         "collected_evidence": [e.model_dump() for e in all_evidence],
+        "tool_histories": tool_histories,
         "agent_trace": trace,
     }
 
 
-def rag_node(state: ResearchState, executing_nodes: list[str]) -> dict:
+def rag_node(state: ResearchState) -> dict:
     """
     RAG Agent: 执行混合检索工具（主题 3）。
 
@@ -445,6 +526,7 @@ def rag_node(state: ResearchState, executing_nodes: list[str]) -> dict:
     from app.observability.trace import emit_event, EventType
 
     dag = deserialize_dag(state["dag"])
+    executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
 
     rag_nodes = [
         n for n in dag.nodes
@@ -458,9 +540,16 @@ def rag_node(state: ResearchState, executing_nodes: list[str]) -> dict:
 
     agent = RAGAgent()
     all_evidence = []
+    tool_histories = []
 
     for node in rag_nodes:
         emit_event(state, EventType.TOOL_START, "rag", f"Retrieving: {node.query}")
+        tool_history = _make_tool_history(
+            agent_type=AgentType.RAG,
+            tool_name="execute_retrieval",
+            task_id=state.get("task_id"),
+            query=node.query,
+        )
 
         node.status = StepStatus.RUNNING
 
@@ -468,6 +557,11 @@ def rag_node(state: ResearchState, executing_nodes: list[str]) -> dict:
             results = agent.execute_retrieval(node.query, state["user_query"])
             node.result = {"results": [r.model_dump() for r in results]}
             node.confidence = 0.88 if results else 0.0
+            _finish_tool_history(
+                tool_history,
+                status="success",
+                result_summary=f"{len(results)} rag chunks",
+            )
 
             for r in results:
                 evidence = Evidence(
@@ -487,6 +581,8 @@ def rag_node(state: ResearchState, executing_nodes: list[str]) -> dict:
             node.status = StepStatus.FAILED
             node.retry_count += 1
             emit_event(state, EventType.ERROR, "rag", f"RAG retrieval failed: {str(e)}")
+            _finish_tool_history(tool_history, status="error", error=str(e))
+        tool_histories.append(tool_history)
 
     dag_serialized = serialize_dag(dag)
 
@@ -499,6 +595,7 @@ def rag_node(state: ResearchState, executing_nodes: list[str]) -> dict:
     return {
         "dag": dag_serialized,
         "collected_evidence": [e.model_dump() for e in all_evidence],
+        "tool_histories": tool_histories,
         "agent_trace": trace,
     }
 
@@ -690,7 +787,7 @@ def replan_node(state: ResearchState) -> dict:
     }
 
 
-def report_node(state: ResearchState) -> dict:
+async def report_node(state: ResearchState) -> dict:
     """
     Report Generator: 生成最终报告（主题 1）。
 
@@ -704,19 +801,51 @@ def report_node(state: ResearchState) -> dict:
     from app.agents.report import ReportAgent
     from app.graph.state import deserialize_evidence, AgentEvent
     from app.observability.trace import emit_event, EventType
+    from app.observability.sse_manager import get_sse_manager
 
     evidence_list = [deserialize_evidence(e) for e in state.get("collected_evidence", [])]
     verification = state.get("verification")
+    session_id = state.get("task_id")
+    sse = get_sse_manager()
+    pending_tasks = []
 
     emit_event(state, EventType.AGENT_START, "report", "Generating final report")
 
     agent = ReportAgent()
-    report, citations = agent.generate(
+
+    def on_chunk(chunk: str) -> None:
+        if session_id:
+            pending_tasks.append(asyncio.create_task(
+                sse.publish(session_id, EventType.REPORT_CHUNK.value, {
+                    "agent": "report",
+                    "chunk": chunk,
+                    "is_partial": True,
+                })
+            ))
+
+    def on_citation(citation) -> None:
+        if session_id:
+            pending_tasks.append(asyncio.create_task(
+                sse.publish(session_id, EventType.REPORT_CITATION.value, {
+                    "agent": "report",
+                    "citation_id": citation.citation_id,
+                    "source": citation.source_title or citation.source_url or "",
+                    "source_url": citation.source_url,
+                    "source_title": citation.source_title,
+                })
+            ))
+
+    report, citations = agent.generate_stream(
         user_query=state["user_query"],
         analysis=state["analysis"],
         evidence_list=evidence_list,
-        verification=verification,
+        reflection=verification,
+        on_chunk=on_chunk,
+        on_citation=on_citation,
     )
+
+    if pending_tasks:
+        await asyncio.gather(*pending_tasks)
 
     # 更新会话状态
     session = state.get("session", {})
