@@ -12,6 +12,7 @@ import re
 from typing import TYPE_CHECKING
 
 from app.config import get_settings
+from app.guardrails import build_guardrail_decision, build_prompt_profile_message
 from app.graph.state import (
     ClaimConflict,
     Evidence,
@@ -119,11 +120,13 @@ Be strict but fair. Flag real hallucinations but don't over-flag.
             ReflectionResult with quality metrics
         """
         logger.info(f"Reflection: validating analysis ({len(analysis)} chars, {len(evidence_list)} evidence items)")
+        decision = build_guardrail_decision(user_query)
+        system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
 
         formatted_evidence = self._format_evidence(evidence_list)
 
         messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""Research Question: {user_query}

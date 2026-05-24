@@ -24,6 +24,14 @@ interface LLMConfig {
   updated_at: string | null
 }
 
+interface LLMStatus {
+  is_configured: boolean
+  provider: string | null
+  model: string | null
+  has_api_key: boolean
+  last_updated: string | null
+}
+
 interface Provider {
   id: string
   name: string
@@ -42,6 +50,16 @@ interface ProvidersResponse {
   default: {
     provider: string
     model: string
+  }
+}
+
+async function readErrorMessage(res: Response, fallback: string) {
+  const text = await res.text()
+  try {
+    const data = JSON.parse(text) as { detail?: string }
+    return data.detail || fallback
+  } catch {
+    return text || fallback
   }
 }
 
@@ -73,6 +91,15 @@ function LLMConfigPanel({ onClose }: LLMConfigPanelProps) {
     queryFn: async () => {
       const res = await fetch('/api/v1/config/llm')
       if (!res.ok) throw new Error('Failed to fetch config')
+      return res.json()
+    },
+  })
+
+  const { data: status } = useQuery<LLMStatus>({
+    queryKey: ['llm-status'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/config/llm/status')
+      if (!res.ok) throw new Error('Failed to fetch LLM status')
       return res.json()
     },
   })
@@ -111,13 +138,13 @@ function LLMConfigPanel({ onClose }: LLMConfigPanelProps) {
         body: JSON.stringify(data),
       })
       if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.detail || 'Failed to update config')
+        throw new Error(await readErrorMessage(res, 'Failed to update config'))
       }
       return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['llm-config'] })
+      queryClient.invalidateQueries({ queryKey: ['llm-status'] })
     },
   })
 
@@ -125,11 +152,12 @@ function LLMConfigPanel({ onClose }: LLMConfigPanelProps) {
   const resetMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch('/api/v1/config/llm', { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to reset config')
+      if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to reset config'))
       return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['llm-config'] })
+      queryClient.invalidateQueries({ queryKey: ['llm-status'] })
       setApiKey('')
       setFallbackApiKey('')
     },
@@ -270,6 +298,53 @@ function LLMConfigPanel({ onClose }: LLMConfigPanelProps) {
         ) : (
           <p className="text-sm text-xmgray-400">暂无可用提供商数据。</p>
         )}
+      </div>
+
+      {/* Current AI Status */}
+      <div className="card p-6 mb-4 border border-xmgray-100 bg-gradient-to-br from-white to-xm-50/40">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-medium text-xmgray-700">当前正在使用的 AI</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                status?.is_configured ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+              }`}>
+                {status?.is_configured ? '已配置' : '未配置'}
+              </span>
+            </div>
+            <p className="text-sm text-xmgray-500">
+              {status?.provider && status?.model
+                ? `${status.provider} / ${status.model}`
+                : '尚未加载到可用配置'}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-xmgray-400">API Key</p>
+            <p className="text-sm font-medium text-xmgray-700">
+              {config?.api_key_masked || '未提供'}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div className="rounded-xl bg-white/80 border border-xmgray-100 p-3">
+            <p className="text-xs text-xmgray-400">API Base</p>
+            <p className="mt-1 text-xmgray-700 break-all">{config?.api_base || '默认地址'}</p>
+          </div>
+          <div className="rounded-xl bg-white/80 border border-xmgray-100 p-3">
+            <p className="text-xs text-xmgray-400">温度 / Token</p>
+            <p className="mt-1 text-xmgray-700">
+              {config ? `${config.temperature.toFixed(1)} / ${config.max_tokens}` : '-'}
+            </p>
+          </div>
+          <div className="rounded-xl bg-white/80 border border-xmgray-100 p-3">
+            <p className="text-xs text-xmgray-400">最近更新时间</p>
+            <p className="mt-1 text-xmgray-700">
+              {status?.last_updated || config?.updated_at
+                ? new Date(status?.last_updated || config?.updated_at || '').toLocaleString('zh-CN')
+                : '暂无'}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Model Selection */}

@@ -27,7 +27,7 @@ interface ResearchResult {
     source_url: string
     source_title: string
     source_type: string
-  }>
+  }> | Record<string, unknown> | null
   agent_trace: unknown[]
   created_at: string
   completed_at: string | null
@@ -41,10 +41,11 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const [query, setQuery] = useState('')
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // SSE for real-time updates
-  const { events, clearEvents } = useSSE(activeSessionId)
+  const { events, status: sseStatus, error: sseError, clearEvents } = useSSE(activeSessionId)
 
   // Focus input on mount
   useEffect(() => {
@@ -77,17 +78,34 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
     onSuccess: (data) => {
       setActiveSessionId(data.session_id)
       setIsStreaming(true)
+      setSessionStatus(data.status)
       clearEvents()
     },
   })
 
   // Detect when streaming ends
   useEffect(() => {
-    const doneEvent = events.find((e: SSEvent) => e.type === 'done' || e.type === 'error')
+    const doneEvent = events.find((e: SSEvent) => e.type === 'done' || e.type === 'workflow_error')
     if (doneEvent) {
       setIsStreaming(false)
+      setSessionStatus(doneEvent.type === 'done' ? 'completed' : 'failed')
     }
   }, [events])
+
+  useEffect(() => {
+    if (sseStatus === 'error') {
+      setIsStreaming(false)
+    }
+  }, [sseStatus])
+
+  useEffect(() => {
+    if (result?.status) {
+      setSessionStatus(result.status)
+      if (result.status !== 'running') {
+        setIsStreaming(false)
+      }
+    }
+  }, [result])
 
   // Build report from streaming chunks
   const streamedReport = events
@@ -126,11 +144,33 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const handleNewResearch = useCallback(() => {
     setActiveSessionId(null)
     setQuery('')
+    setSessionStatus(null)
     clearEvents()
     inputRef.current?.focus()
   }, [clearEvents])
 
   const displayReport = streamedReport || result?.report || ''
+  const normalizedCitations = Array.isArray(result?.citations) ? result.citations : []
+  const showConfirmationState = sessionStatus === 'pending_confirmation'
+  const hasVisibleEvents = events.some((event: SSEvent) => event.type !== 'connected')
+  const isConnectingStream = isStreaming && (sseStatus === 'connecting' || sseStatus === 'connected') && !hasVisibleEvents
+  const canRefetchResult = Boolean(activeSessionId)
+  const workflowErrorEvent = [...events].reverse().find((event: SSEvent) => event.type === 'workflow_error')
+  const isFailed = sessionStatus === 'failed'
+  const emptyReportTitle = isConnectingStream
+    ? '正在建立研究流连接...'
+    : isFailed
+      ? '研究执行失败'
+      : sseError
+      ? '实时流已中断'
+      : '报告暂未生成'
+  const emptyReportDescription = isConnectingStream
+    ? '任务已提交，正在等待首个 Agent 事件和报告片段。'
+    : isFailed
+      ? String(workflowErrorEvent?.data.error || workflowErrorEvent?.data.message || '任务执行过程中发生错误。')
+      : sseError
+      ? '实时事件连接失败，但仍可继续读取已落库的研究结果。'
+      : '当前任务尚未返回可展示的报告内容。'
 
   // ======= RENDER =======
 
@@ -222,7 +262,31 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   // ======= ACTIVE RESEARCH MODE =======
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+      {showConfirmationState && (
+        <div className="mb-6 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          当前任务需要确认，尚未进入执行。
+        </div>
+      )}
+      {sseError && (
+        <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          SSE 连接异常：{sseError}
+          {canRefetchResult && (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="ml-3 text-red-800 underline underline-offset-2"
+            >
+              刷新页面
+            </button>
+          )}
+        </div>
+      )}
+      {isConnectingStream && (
+        <div className="mb-6 rounded-2xl border border-xm-100 bg-xm-50 px-4 py-3 text-sm text-xm-700">
+          研究任务已启动，正在等待实时事件流连接完成。
+        </div>
+      )}
       {/* Top bar: query + stats */}
       <div className="flex items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-4 min-w-0">
@@ -247,7 +311,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
             <div className="flex items-center gap-1.5">
               <div className={`status-dot ${isStreaming ? 'streaming' : 'online'}`} />
               <span className="text-xs text-xmgray-500">
-                {isStreaming ? currentNode || '执行中' : '已完成'}
+                {isStreaming ? currentNode || '执行中' : isFailed ? '失败' : '已完成'}
               </span>
             </div>
             <div className="h-4 w-px bg-xmgray-200" />
@@ -276,7 +340,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
               <span className="tag text-[11px]">
                 {isStreaming
                   ? <><span className="status-dot streaming mr-1" />运行中</>
-                  : '已完成'}
+                  : isFailed ? '失败' : '已完成'}
               </span>
             </div>
             <div className="p-4 h-[420px] overflow-y-auto">
@@ -323,22 +387,24 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
                     <span className="status-dot streaming mr-1" />流式生成中
                   </span>
                 )}
-                {result?.citations && result.citations.length > 0 && (
-                  <span className="tag text-[11px]">{result.citations.length} 条引用</span>
+                {normalizedCitations.length > 0 && (
+                  <span className="tag text-[11px]">{normalizedCitations.length} 条引用</span>
                 )}
               </div>
             </div>
             <div className="p-6 min-h-[500px] max-h-[680px] overflow-y-auto">
               <ReportPreview
                 report={displayReport}
-                citations={result?.citations || []}
+                citations={normalizedCitations}
                 streaming={isStreaming}
+                emptyTitle={emptyReportTitle}
+                emptyDescription={emptyReportDescription}
               />
             </div>
           </div>
 
           {/* Citations panel */}
-          {result?.citations && result.citations.length > 0 && (
+          {normalizedCitations.length > 0 && (
             <div className="card p-0 overflow-hidden">
               <div className="px-5 py-4 border-b border-xmgray-100">
                 <h3 className="text-sm font-medium text-xmgray-700">
@@ -346,7 +412,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
                 </h3>
               </div>
               <div className="p-5 max-h-52 overflow-y-auto space-y-2">
-                {result.citations.map((c, i) => (
+                {normalizedCitations.map((c, i) => (
                   <a
                     key={i}
                     href={c.source_url}

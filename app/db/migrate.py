@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import asyncpg
+from app.db.text_search import regconfig_sql_literal, resolve_text_search_config
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,9 @@ CREATE INDEX IF NOT EXISTS idx_documents_embedding
     ON documents USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
--- Full-text search index (Chinese and English)
-CREATE INDEX IF NOT EXISTS idx_documents_fts_zh
-    ON documents USING gin (to_tsvector('chinese', content));
-
-CREATE INDEX IF NOT EXISTS idx_documents_fts_en
-    ON documents USING gin (to_tsvector('english', content));
+-- Full-text search index
+CREATE INDEX IF NOT EXISTS idx_documents_fts
+    ON documents USING gin (to_tsvector({fts_config}, content));
 
 -- Metadata filtering index
 CREATE INDEX IF NOT EXISTS idx_documents_metadata
@@ -58,6 +56,13 @@ CREATE TABLE IF NOT EXISTS research_sessions (
     status VARCHAR(20) DEFAULT 'pending'
         CHECK (status IN ('pending', 'running', 'completed', 'failed')),
     research_plan JSONB DEFAULT '[]',
+    guardrail_decision JSONB DEFAULT NULL,
+    guardrail_trace JSONB DEFAULT '[]',
+    evidence_status JSONB DEFAULT NULL,
+    review_status JSONB DEFAULT NULL,
+    prompt_profile VARCHAR(50),
+    prompt_template TEXT,
+    enabled_tools JSONB DEFAULT '[]',
     final_report TEXT,
     citations JSONB DEFAULT '[]',
     agent_trace JSONB DEFAULT '[]',
@@ -201,8 +206,24 @@ async def run_migration(
                 """)
 
             # Create schema
-            schema = SCHEMA_SQL.format(dimension=embed_dimension)
-            await conn.execute(schema)
+            fts_config = await resolve_text_search_config(conn, log=logger)
+            try:
+                schema = SCHEMA_SQL.format(
+                    dimension=embed_dimension,
+                    fts_config=regconfig_sql_literal(fts_config),
+                )
+                await conn.execute(schema)
+            except Exception as exc:
+                logger.warning(
+                    "Migration failed with text search config '%s'; retrying with 'simple': %s",
+                    fts_config,
+                    exc,
+                )
+                schema = SCHEMA_SQL.format(
+                    dimension=embed_dimension,
+                    fts_config="'simple'",
+                )
+                await conn.execute(schema)
 
             logger.info("Database migration completed successfully")
 

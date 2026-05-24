@@ -10,26 +10,26 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import asyncpg
-import redis.asyncio as redis
-
 from app.config import get_settings
+from app.db.text_search import regconfig_sql_literal, resolve_text_search_config
 
 logger = logging.getLogger(__name__)
 
 # Global pool instances
-_db_pool: asyncpg.Pool | None = None
-_redis_client: redis.Redis | None = None
+_db_pool: Any | None = None
+_redis_client: Any | None = None
+_fts_config: str | None = None
 
 
 async def init_db() -> asyncpg.Pool:
     """
     Initialize PostgreSQL connection pool and create tables if needed.
     """
-    global _db_pool
+    global _db_pool, _fts_config
     if _db_pool is not None:
         return _db_pool
 
+    import asyncpg
     settings = get_settings()
     pool = await asyncpg.create_pool(
         settings.database.url,
@@ -39,6 +39,8 @@ async def init_db() -> asyncpg.Pool:
 
     # Create tables
     async with pool.acquire() as conn:
+        _fts_config = await resolve_text_search_config(conn, log=logger)
+        fts_config_sql = regconfig_sql_literal(_fts_config)
         await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS documents (
@@ -54,10 +56,22 @@ async def init_db() -> asyncpg.Pool:
             CREATE INDEX IF NOT EXISTS idx_documents_embedding
             ON documents USING ivfflat (embedding vector_cosine_ops)
         """)
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_documents_fts
-            ON documents USING gin (to_tsvector('chinese', content))
-        """)
+        try:
+            await conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_documents_fts
+                ON documents USING gin (to_tsvector({fts_config_sql}, content))
+            """)
+        except Exception as exc:
+            logger.warning(
+                "Failed to create FTS index with config '%s', falling back to 'simple': %s",
+                _fts_config,
+                exc,
+            )
+            _fts_config = "simple"
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_documents_fts
+                ON documents USING gin (to_tsvector('simple', content))
+            """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS research_sessions (
@@ -65,6 +79,13 @@ async def init_db() -> asyncpg.Pool:
                 user_query TEXT NOT NULL,
                 status VARCHAR(20) DEFAULT 'pending',
                 research_plan JSONB DEFAULT '[]',
+                guardrail_decision JSONB DEFAULT NULL,
+                guardrail_trace JSONB DEFAULT '[]',
+                evidence_status JSONB DEFAULT NULL,
+                review_status JSONB DEFAULT NULL,
+                prompt_profile VARCHAR(50),
+                prompt_template TEXT,
+                enabled_tools JSONB DEFAULT '[]',
                 final_report TEXT,
                 citations JSONB DEFAULT '[]',
                 agent_trace JSONB DEFAULT '[]',
@@ -106,10 +127,23 @@ async def get_db_pool() -> asyncpg.Pool:
     return _db_pool
 
 
+async def get_text_search_config() -> str:
+    """Return the resolved PostgreSQL text search configuration."""
+    global _fts_config
+    if _fts_config is not None:
+        return _fts_config
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        _fts_config = await resolve_text_search_config(conn, log=logger)
+    return _fts_config
+
+
 async def get_redis() -> redis.Redis:
     """Get the Redis client."""
     global _redis_client
     if _redis_client is None:
+        import redis.asyncio as redis
         settings = get_settings()
         _redis_client = redis.from_url(
             settings.redis.url,
@@ -121,10 +155,11 @@ async def get_redis() -> redis.Redis:
 
 async def close_db():
     """Close all database connections."""
-    global _db_pool, _redis_client
+    global _db_pool, _redis_client, _fts_config
     if _db_pool:
         await _db_pool.close()
         _db_pool = None
+    _fts_config = None
     if _redis_client:
         await _redis_client.close()
         _redis_client = None

@@ -117,13 +117,10 @@ cd deepintel
 ### 3.2 后端设置
 
 ```bash
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或 venv\Scripts\activate  # Windows
-
-# 安装依赖
-pip install -r requirements.txt
+# 创建虚拟环境并安装依赖
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+pip install -r requirements-local.txt
 
 # 安装 Playwright 浏览器
 playwright install chromium
@@ -180,7 +177,22 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### 4.2 服务架构
+### 4.2 Windows 本机启动
+
+```powershell
+.\start-deepintel.ps1 -Mode local
+
+脚本会优先使用项目内 `.venv`，不存在时自动创建并安装依赖。
+```
+
+可选参数：
+
+```powershell
+.\start-deepintel.ps1 -Mode local -SkipFrontend
+.\start-deepintel.ps1 -Mode local -SkipDbChecks
+```
+
+### 4.3 服务架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -202,7 +214,7 @@ docker-compose down
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 4.3 单独构建镜像
+### 4.4 单独构建镜像
 
 ```bash
 # 后端镜像

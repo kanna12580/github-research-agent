@@ -108,7 +108,7 @@ function AgentTrace({ events }: AgentTraceProps) {
             content = `错误: ${e.data.error || '未知错误'}`
             eventClass = 'tool_error'
             break
-          case 'error':
+          case 'workflow_error':
             content = String(e.data.message || e.data.content || '发生错误')
             eventClass = 'error'
             break

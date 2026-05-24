@@ -5,6 +5,7 @@ Integration tests for the complete research workflow.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.graph.state import ResearchState, create_initial_state, StepStatus
@@ -69,6 +70,14 @@ class TestResearchWorkflowIntegration:
 
         step.status = StepStatus.DONE
         assert step.status == StepStatus.DONE
+
+    def test_fact_lookup_does_not_force_no_evidence_reject(self):
+        from app.guardrails import build_guardrail_decision
+
+        decision = build_guardrail_decision("量子计算是什么")
+
+        assert decision.intent == "fact_lookup"
+        assert decision.reject_if_no_evidence is False
 
 
 class TestAgentCollaboration:
@@ -135,18 +144,31 @@ class TestSSEIntegration:
 
         # Publish an event
         await sse_manager.publish(session_id, "agent_start", {"agent": "planner"})
+        await sse_manager.publish(session_id, "done", {"status": "completed"})
 
         # Stream events
         events = []
         async for event in sse_manager.stream(session_id):
             events.append(event)
-            if event["event"] == "connected":
-                break
-            if len(events) > 5:
+            if event["event"] == "done":
                 break
 
         assert len(events) >= 1
         assert events[0]["event"] == "connected"
+        assert any(event["event"] == "agent_start" for event in events)
+        assert any(event["event"] == "done" for event in events)
+
+    @pytest.mark.asyncio
+    async def test_sse_wait_for_completion_accepts_workflow_error(self, sse_manager):
+        """SSE completion waiter should stop on workflow_error."""
+        session_id = "test-workflow-error-session"
+
+        await sse_manager.publish(session_id, "agent_start", {"agent": "planner"})
+        await sse_manager.publish(session_id, "workflow_error", {"error": "boom"})
+
+        events = await sse_manager.wait_for_completion(session_id, timeout=1.0)
+
+        assert any(event["event"] == "workflow_error" for event in events)
 
     @pytest.mark.asyncio
     async def test_sse_multiple_sessions(self, sse_manager):
@@ -176,6 +198,22 @@ class TestSSEIntegration:
         assert len(history) == 5
 
     @pytest.mark.asyncio
+    async def test_sse_replays_history_for_late_subscriber(self, sse_manager):
+        """Late SSE subscribers should receive buffered history."""
+        session_id = "test-late-session"
+
+        await sse_manager.publish(session_id, "agent_start", {"agent": "planner"})
+        await sse_manager.publish(session_id, "report_chunk", {"chunk": "hello"})
+
+        events = []
+        async for event in sse_manager.stream(session_id):
+            events.append(event)
+            if len(events) >= 3:
+                break
+
+        assert [event["event"] for event in events[:3]] == ["connected", "agent_start", "report_chunk"]
+
+    @pytest.mark.asyncio
     async def test_sse_session_close(self, sse_manager):
         """Test SSE session cleanup."""
         session_id = "test-close-session"
@@ -187,6 +225,77 @@ class TestSSEIntegration:
         # Close session
         sse_manager.close_session(session_id)
         assert session_id not in sse_manager._sessions
+
+
+class TestResearchResultNormalization:
+    """Tests for research result response normalization."""
+
+    def test_iter_state_updates_unwraps_langgraph_node_chunks(self):
+        from app.api.research import _iter_state_updates
+
+        chunk = {
+            "report": {
+                "final_report": "report text",
+                "status": "completed",
+            }
+        }
+
+        assert list(_iter_state_updates(chunk)) == [
+            {
+                "final_report": "report text",
+                "status": "completed",
+            }
+        ]
+
+    def test_iter_state_updates_keeps_plain_state_chunks(self):
+        from app.api.research import _iter_state_updates
+
+        chunk = {
+            "final_report": "report text",
+            "status": "completed",
+        }
+
+        assert list(_iter_state_updates(chunk)) == [chunk]
+
+    @pytest.mark.asyncio
+    async def test_research_result_normalizes_citations_shape(self):
+        from app.api.research import get_research_result
+
+        row = {
+            "id": "test-session",
+            "user_query": "Test query",
+            "status": "completed",
+            "final_report": "report",
+            "citations": {"citation_id": "citation:1", "source_url": "https://example.com"},
+            "agent_trace": [],
+            "created_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:00:00"),
+            "completed_at": None,
+        }
+
+        class FakeConn:
+            async def fetchrow(self, *args, **kwargs):
+                return row
+
+            async def fetch(self, *args, **kwargs):
+                return []
+
+            def acquire(self):
+                return self
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakePool:
+            def acquire(self):
+                return FakeConn()
+
+        with patch("app.api.research.get_db_pool", AsyncMock(return_value=FakePool())):
+            response = await get_research_result("test-session")
+
+        assert response["citations"] == [{"citation_id": "citation:1", "source_url": "https://example.com"}]
 
 
 class TestGraphCompilation:

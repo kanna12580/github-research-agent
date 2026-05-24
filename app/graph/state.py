@@ -42,8 +42,16 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any, Literal, TypedDict
 
-from langgraph.graph import add_messages
 from pydantic import BaseModel, Field
+
+
+def merge_lists(left: list | None, right: list | None) -> list:
+    """Merge list state without treating dict entries as chat messages."""
+    if not left:
+        return list(right or [])
+    if not right:
+        return list(left)
+    return [*left, *right]
 
 
 # ==============================================================
@@ -555,8 +563,8 @@ class ResearchState(TypedDict):
     completed_nodes: list[str]        # 已完成节点
 
     # ===== 主题 3: 工具调用历史 =====
-    tool_histories: Annotated[list[dict], add_messages]  # ToolInvocationHistory[]
-    collected_evidence: Annotated[list[dict], add_messages]  # Evidence[]
+    tool_histories: Annotated[list[dict], merge_lists]  # ToolInvocationHistory[]
+    collected_evidence: Annotated[list[dict], merge_lists]  # Evidence[]
 
     # ===== 兼容旧版字段 =====
     search_results: list[dict]
@@ -573,9 +581,14 @@ class ResearchState(TypedDict):
     analysis: str
     final_report: str
     citations: list[dict]
+    guardrail_decision: dict | None
+    evidence_status: dict | None
+    review_status: dict | None
+    user_confirmed: bool
 
     # ===== 可观测性 =====
-    agent_trace: Annotated[list[dict], add_messages]
+    agent_trace: Annotated[list[dict], merge_lists]
+    guardrail_trace: Annotated[list[dict], merge_lists]
     errors: list[dict]
     """
     LangGraph 工作流的核心状态（主题 1）。
@@ -601,15 +614,15 @@ class ResearchState(TypedDict):
     completed_nodes: list[str]        # 已完成节点
 
     # ===== 主题 3: 工具调用历史 =====
-    tool_histories: Annotated[list[dict], add_messages]  # ToolInvocationHistory[]
-    collected_evidence: Annotated[list[dict], add_messages]  # Evidence[]
+    tool_histories: Annotated[list[dict], merge_lists]  # ToolInvocationHistory[]
+    collected_evidence: Annotated[list[dict], merge_lists]  # Evidence[]
 
     # ===== 兼容旧版字段 =====
     # backward compat: legacy search/browser/rag results (used by analyst_node)
-    search_results: Annotated[list[dict], add_messages] = []
-    browser_results: Annotated[list[dict], add_messages] = []
-    rag_results: Annotated[list[dict], add_messages] = []
-    aggregated_evidence: Annotated[list[dict], add_messages] = []
+    search_results: Annotated[list[dict], merge_lists] = []
+    browser_results: Annotated[list[dict], merge_lists] = []
+    rag_results: Annotated[list[dict], merge_lists] = []
+    aggregated_evidence: Annotated[list[dict], merge_lists] = []
 
     # ===== 主题 5: 校验 =====
     verification: dict | None       # VerificationResult
@@ -620,9 +633,14 @@ class ResearchState(TypedDict):
     analysis: str
     final_report: str
     citations: list[dict]
+    guardrail_decision: dict | None
+    evidence_status: dict | None
+    review_status: dict | None
+    user_confirmed: bool
 
     # ===== 可观测性 =====
-    agent_trace: Annotated[list[dict], add_messages]
+    agent_trace: Annotated[list[dict], merge_lists]
+    guardrail_trace: Annotated[list[dict], merge_lists] = []
     errors: list[dict]
 
 
@@ -673,8 +691,13 @@ def create_initial_state(
         analysis="",
         final_report="",
         citations=[],
+        guardrail_decision=None,
+        evidence_status=None,
+        review_status=None,
+        user_confirmed=False,
 
         agent_trace=[],
+        guardrail_trace=[],
         errors=[],
     )
 

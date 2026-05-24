@@ -25,7 +25,7 @@ RUN playwright install --with-deps chromium
 
 # Copy application code
 COPY app/ ./app/
-COPY SPEC.md .
+COPY docs/SPEC.md ./docs/SPEC.md
 COPY README.md .
 
 # Expose port

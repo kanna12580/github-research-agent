@@ -15,10 +15,12 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import get_settings
+from app.guardrails import build_guardrail_decision, build_review_status, compose_guardrail_prompt
 from app.graph.compiler import compile_research_graph
 from app.graph.state import create_initial_state, ResearchState, TaskStatus
 from app.observability.sse_manager import get_sse_manager
 from app.db.connection import get_db_pool
+from app.db.json import dumps_json
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/research", tags=["research"])
@@ -32,6 +34,62 @@ ACCUMULATING_STATE_KEYS = {
     "aggregated_evidence",
 }
 
+KNOWN_STATE_KEYS = {
+    "task_id",
+    "user_query",
+    "created_at",
+    "status",
+    "session",
+    "dag",
+    "current_executing_nodes",
+    "completed_nodes",
+    "tool_histories",
+    "collected_evidence",
+    "search_results",
+    "browser_results",
+    "rag_results",
+    "aggregated_evidence",
+    "verification",
+    "revision_needed",
+    "revision_count",
+    "analysis",
+    "final_report",
+    "citations",
+    "guardrail_decision",
+    "evidence_status",
+    "review_status",
+    "user_confirmed",
+    "agent_trace",
+    "guardrail_trace",
+    "errors",
+}
+
+
+def _iter_state_updates(chunk: dict[str, Any]):
+    """Yield state update mappings from raw LangGraph stream chunks."""
+    if any(key in KNOWN_STATE_KEYS for key in chunk):
+        yield chunk
+        return
+
+    for value in chunk.values():
+        if isinstance(value, dict):
+            yield value
+
+
+def _normalize_citations(value: Any) -> list[dict[str, Any]]:
+    """Return citations as a list of dicts regardless of stored shape."""
+    if isinstance(value, list):
+        normalized: list[dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, dict):
+                normalized.append(item)
+            else:
+                normalized.append({"value": item})
+        return normalized
+    if isinstance(value, dict):
+        return [value]
+    return []
+
 
 # ==============================================================
 # Request/Response Models
@@ -42,6 +100,7 @@ class ResearchRequest(BaseModel):
     query: str = Field(..., min_length=5, max_length=2000, description="Research query")
     session_id: str | None = Field(default=None, description="Optional session ID for continuation")
     max_revision: int = Field(default=3, ge=1, le=5, description="Max revision loops")
+    user_confirmed: bool = Field(default=False, description="User confirmed high-risk task")
 
 
 class ResearchStatus(BaseModel):
@@ -57,6 +116,7 @@ class ResearchResponse(BaseModel):
     session_id: str
     status: str
     message: str
+    requires_confirmation: bool = False
 
 
 # ==============================================================
@@ -107,7 +167,7 @@ async def stream_research(session_id: str):
     - reflection: Reflection result
     - report_chunk: Report content chunks
     - done: Task completion
-    - error: Error occurred
+    - workflow_error: Workflow/business error occurred
     """
     return EventSourceResponse(
         research_event_generator(session_id),
@@ -132,24 +192,59 @@ async def create_research(
     """
     # Generate or use provided session ID
     session_id = request.session_id or str(uuid.uuid4())
+    decision = build_guardrail_decision(request.query, user_confirmed=request.user_confirmed)
 
     logger.info(f"Creating research session: {session_id}, query: {request.query[:50]}")
 
     # Save to database
     pool = await get_db_pool()
     async with pool.acquire() as conn:
+        review_status = build_review_status(
+            blocked=decision.must_confirm and not request.user_confirmed,
+            requires_confirmation=decision.must_confirm and not request.user_confirmed,
+            approved=request.user_confirmed or not decision.must_confirm,
+            reason="pending_confirmation" if decision.must_confirm and not request.user_confirmed else None,
+            risk_level=decision.risk_level,
+            intent=decision.intent,
+            prompt_profile=decision.prompt_profile,
+        )
         await conn.execute(
             """
-            INSERT INTO research_sessions (id, user_query, status, created_at, updated_at)
-            VALUES ($1::uuid, $2, 'running', $3, $3)
+            INSERT INTO research_sessions (id, user_query, status, guardrail_decision, guardrail_trace,
+                                           evidence_status, review_status, prompt_profile, prompt_template,
+                                           enabled_tools, created_at, updated_at)
+            VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11, $11)
             ON CONFLICT (id) DO UPDATE SET
                 user_query = $2,
-                status = 'running',
-                updated_at = $3
+                status = $3,
+                guardrail_decision = $4::jsonb,
+                guardrail_trace = $5::jsonb,
+                evidence_status = $6::jsonb,
+                review_status = $7::jsonb,
+                prompt_profile = $8,
+                prompt_template = $9,
+                enabled_tools = $10::jsonb,
+                updated_at = $11
             """,
             session_id,
             request.query,
+            "pending" if decision.must_confirm and not request.user_confirmed else "running",
+            dumps_json(decision.model_dump()),
+            dumps_json([]),
+            dumps_json(None),
+            dumps_json(review_status),
+            decision.prompt_profile.value,
+            compose_guardrail_prompt(request.query, decision),
+            dumps_json(decision.enabled_tools),
             datetime.utcnow(),
+        )
+
+    if decision.must_confirm and not request.user_confirmed:
+        return ResearchResponse(
+            session_id=session_id,
+            status="pending_confirmation",
+            message="High-risk request requires user confirmation before execution.",
+            requires_confirmation=True,
         )
 
     # Start background execution
@@ -158,12 +253,14 @@ async def create_research(
         session_id=session_id,
         query=request.query,
         max_revision=request.max_revision,
+        user_confirmed=request.user_confirmed,
     )
 
     return ResearchResponse(
         session_id=session_id,
         status="running",
         message=f"Research task started. Connect to /api/v1/research/stream/{session_id} for updates.",
+        requires_confirmation=False,
     )
 
 
@@ -219,7 +316,7 @@ async def get_research_result(session_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    citations = [dict(citation) for citation in citation_rows] if citation_rows else row["citations"]
+    citations = [dict(citation) for citation in citation_rows] if citation_rows else _normalize_citations(row["citations"])
 
     return {
         "session_id": str(row["id"]),
@@ -241,6 +338,7 @@ async def run_research_workflow(
     session_id: str,
     query: str,
     max_revision: int = 3,
+    user_confirmed: bool = False,
 ):
     """
     Execute the LangGraph research workflow in background.
@@ -264,6 +362,12 @@ async def run_research_workflow(
         # Create initial state
         state = create_initial_state(query, session_id)
         state["session"]["max_revisions"] = max_revision
+        decision = build_guardrail_decision(query)
+        state["guardrail_decision"] = decision.model_dump()
+        state["user_confirmed"] = user_confirmed
+        state["session"]["prompt_profile"] = decision.prompt_profile.value
+        state["session"]["enabled_tools"] = decision.enabled_tools
+        state["session"]["prompt_template"] = compose_guardrail_prompt(query, decision)
 
         # Compile graph
         graph = compile_research_graph()
@@ -284,24 +388,25 @@ async def run_research_workflow(
             if isinstance(chunk, dict):
                 last_chunk = chunk
                 # Merge chunk into accumulated state
-                for key, value in chunk.items():
-                    if key in ACCUMULATING_STATE_KEYS and isinstance(value, list):
-                        accumulated_state.setdefault(key, [])
-                        accumulated_state[key].extend(value)
-                    else:
-                        accumulated_state[key] = value
+                for update in _iter_state_updates(chunk):
+                    for key, value in update.items():
+                        if key in ACCUMULATING_STATE_KEYS and isinstance(value, list):
+                            accumulated_state.setdefault(key, [])
+                            accumulated_state[key].extend(value)
+                        else:
+                            accumulated_state[key] = value
 
-                    if key == "agent_trace":
-                        # Forward agent trace events to SSE
-                        for event in value:
-                            event_type = event.get("event_type", "trace") if isinstance(event, dict) else "trace"
-                            await sse.publish(session_id, event_type, event)
-                    else:
-                        # Forward other state updates
-                        await sse.publish(session_id, "state_update", {
-                            "key": key,
-                            "value": str(value)[:500] if value else "",
-                        })
+                        if key == "agent_trace":
+                            # Forward agent trace events to SSE
+                            for event in value:
+                                event_type = event.get("event_type", "trace") if isinstance(event, dict) else "trace"
+                                await sse.publish(session_id, event_type, event)
+                        else:
+                            # Forward other state updates
+                            await sse.publish(session_id, "state_update", {
+                                "key": key,
+                                "value": str(value)[:500] if value else "",
+                            })
 
         # Determine final state
         # Use accumulated state, with fallback to last chunk
@@ -318,17 +423,31 @@ async def run_research_workflow(
                         """
                         UPDATE research_sessions
                         SET status = $1,
-                            final_report = $2,
-                            citations = $3::jsonb,
-                            agent_trace = $4::jsonb,
-                            updated_at = $5,
-                            completed_at = $5
-                        WHERE id = $6::uuid
+                            guardrail_decision = $2::jsonb,
+                            guardrail_trace = $3::jsonb,
+                            evidence_status = $4::jsonb,
+                            review_status = $5::jsonb,
+                            prompt_profile = $6,
+                            prompt_template = $7,
+                            enabled_tools = $8::jsonb,
+                            final_report = $9,
+                            citations = $10::jsonb,
+                            agent_trace = $11::jsonb,
+                            updated_at = $12,
+                            completed_at = $12
+                        WHERE id = $13::uuid
                         """,
                         final_state.get("status", TaskStatus.COMPLETED.value),
+                        dumps_json(final_state.get("guardrail_decision")),
+                        dumps_json(final_state.get("guardrail_trace", [])),
+                        dumps_json(final_state.get("evidence_status")),
+                        dumps_json(final_state.get("review_status")),
+                        final_state.get("session", {}).get("prompt_profile"),
+                        final_state.get("session", {}).get("prompt_template"),
+                        dumps_json(final_state.get("session", {}).get("enabled_tools", [])),
                         final_state.get("final_report", ""),
-                        citations,
-                        final_state.get("agent_trace", []),
+                        dumps_json(citations),
+                        dumps_json(final_state.get("agent_trace", [])),
                         completed_at,
                         session_id,
                     )
@@ -379,7 +498,7 @@ async def run_research_workflow(
         logger.error(f"Research workflow error for {session_id}: {e}", exc_info=True)
 
         # Emit error
-        await sse.publish(session_id, "error", {
+        await sse.publish(session_id, "workflow_error", {
             "session_id": session_id,
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat(),

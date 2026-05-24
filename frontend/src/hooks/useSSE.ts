@@ -29,14 +29,19 @@ export function useSSE(sessionId: string | null): {
   const [status, setStatus] = useState<string>('disconnected')
   const [error, setError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const completedRef = useRef(false)
 
   const clearEvents = useCallback(() => {
     setEvents([])
+    setError(null)
+    completedRef.current = false
   }, [])
 
   useEffect(() => {
     if (!sessionId) {
       setStatus('disconnected')
+      setError(null)
+      completedRef.current = false
       return
     }
 
@@ -47,12 +52,14 @@ export function useSSE(sessionId: string | null): {
 
     setStatus('connecting')
     setError(null)
+    completedRef.current = false
 
     const eventSource = new EventSource(`/api/v1/research/stream/${sessionId}`)
     eventSourceRef.current = eventSource
 
     eventSource.onopen = () => {
       setStatus('connected')
+      setError(null)
     }
 
     eventSource.onmessage = (event) => {
@@ -72,13 +79,19 @@ export function useSSE(sessionId: string | null): {
       'connected', 'agent_start', 'agent_complete', 'agent_end', 'thought',
       'tool_start', 'tool_call', 'tool_complete', 'tool_result', 'tool_error',
       'state_update', 'reflection', 'report_chunk',
-      'report_citation', 'done', 'error', 'workflow_start',
+      'report_citation', 'done', 'workflow_error', 'workflow_start',
     ]
 
     eventTypes.forEach(type => {
       eventSource.addEventListener(type, (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data)
+          if (type === 'done' || type === 'workflow_error') {
+            completedRef.current = true
+            eventSource.close()
+            eventSourceRef.current = null
+            setStatus('disconnected')
+          }
           setEvents(prev => [
             ...prev,
             { type, data, timestamp: new Date().toISOString() }
@@ -93,6 +106,9 @@ export function useSSE(sessionId: string | null): {
     })
 
     eventSource.onerror = () => {
+      if (completedRef.current) {
+        return
+      }
       setStatus('error')
       setError('SSE connection error')
       // EventSource will auto-reconnect
@@ -100,6 +116,8 @@ export function useSSE(sessionId: string | null): {
 
     return () => {
       eventSource.close()
+      eventSourceRef.current = null
+      completedRef.current = false
       setStatus('disconnected')
     }
   }, [sessionId])

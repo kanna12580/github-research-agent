@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings, Settings, LLMSettings
 from app.db.connection import get_db_pool
+from app.db.json import dumps_json
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
@@ -141,7 +142,7 @@ async def save_llm_config_to_db(config: LLMConfigRequest) -> None:
                 config_data = $1::jsonb,
                 updated_at = $2
             """,
-            config.model_dump(),
+            dumps_json(config.model_dump()),
             datetime.utcnow(),
         )
 

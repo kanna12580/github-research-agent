@@ -10,6 +10,7 @@ import logging
 from typing import TYPE_CHECKING, Callable
 
 from app.config import get_settings
+from app.guardrails import build_guardrail_decision, build_prompt_profile_message
 from app.graph.state import Citation, Evidence
 
 if TYPE_CHECKING:
@@ -136,6 +137,13 @@ class ReportAgent:
             Tuple of (report_markdown, citations_list)
         """
         logger.info(f"Report: generating report for query: {user_query[:80]}")
+        decision = build_guardrail_decision(user_query)
+        system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
+        if not evidence_list and not decision.reject_if_no_evidence:
+            system_prompt += (
+                "\n\n当前没有外部证据。允许回答简单事实问题，但必须明确说明“未检索验证”。"
+                "不要生成虚假的 [citation:N]，不要声称已检索来源。"
+            )
 
         citations = self._build_citations(evidence_list)
         for citation in citations:
@@ -159,7 +167,7 @@ class ReportAgent:
         citation_note = self._citation_range_note(len(citations))
 
         messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""Research Topic: {user_query}

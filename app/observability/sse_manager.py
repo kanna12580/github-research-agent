@@ -37,7 +37,7 @@ class SSEManager:
     - reflection: Reflection result available
     - report_chunk: Report content chunk (Markdown)
     - report_citation: Citation added to report
-    - error: Error occurred
+    - workflow_error: Workflow/business error occurred
     - done: Task completed
 
     Thread Safety:
@@ -127,6 +127,17 @@ class SSEManager:
         }
 
         try:
+            # Replay buffered history so late subscribers do not miss the
+            # startup burst before the EventSource handshake completes.
+            async with self._locks.setdefault(session_id, asyncio.Lock()):
+                history = list(self._events_per_session.get(session_id, []))
+
+            for event in history:
+                yield {
+                    "event": event["type"],
+                    "data": json.dumps(event["data"], ensure_ascii=False),
+                }
+
             while True:
                 event = await queue.get()
                 yield {
@@ -170,7 +181,7 @@ class SSEManager:
         timeout: float = 300.0,
     ) -> list[dict]:
         """
-        Wait for a session to complete (receives 'done' or 'error' event).
+        Wait for a session to complete (receives 'done' or 'workflow_error' event).
 
         Useful for testing and synchronous use cases.
 
@@ -187,7 +198,7 @@ class SSEManager:
 
         async for event in self.stream(session_id):
             events.append(event)
-            if event.get("event") in ("done", "error"):
+            if event.get("event") in ("done", "workflow_error"):
                 return events
 
             if loop.time() > deadline:

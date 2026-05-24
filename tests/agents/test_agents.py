@@ -32,12 +32,44 @@ class TestPlannerAgent:
         assert "rag" in agent_types
         assert "analyst" in agent_types
 
+    def test_fact_lookup_uses_minimal_dag(self):
+        from app.agents.planner import PlannerAgent
+
+        dag = PlannerAgent().create_dag("量子计算是什么")
+
+        assert len(dag.nodes) == 2
+        assert [node.node_type for node in dag.nodes] == ["search", "analyst"]
+
 
 class TestSearchAgent:
     def test_search_agent_import(self):
         from app.agents.search import SearchAgent
         agent = SearchAgent()
         assert agent is not None
+
+    def test_execute_search_uses_ten_second_timeout(self, monkeypatch):
+        from app.agents.search import SearchAgent
+
+        captured = {}
+
+        def fake_get(url, params=None, timeout=None):
+            captured["timeout"] = timeout
+
+            class _Response:
+                status_code = 200
+
+                def json(self):
+                    return {}
+
+            return _Response()
+
+        monkeypatch.setattr("requests.get", fake_get)
+
+        agent = SearchAgent()
+        result = agent._execute_search("test query")
+
+        assert captured["timeout"] == 10
+        assert result == []
 
     def test_deduplication(self):
         from app.agents.search import SearchAgent, SearchResult

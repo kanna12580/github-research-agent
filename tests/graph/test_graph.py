@@ -24,7 +24,8 @@ class TestResearchState:
             "tool_histories", "collected_evidence", "verification",
             "search_results", "browser_results", "rag_results", "aggregated_evidence",
             "revision_needed", "revision_count", "analysis",
-            "final_report", "citations", "agent_trace", "errors"
+            "final_report", "citations", "guardrail_decision", "evidence_status",
+            "review_status", "user_confirmed", "agent_trace", "guardrail_trace", "errors"
         }
         assert set(state.keys()) == required_keys
 
@@ -118,6 +119,59 @@ class TestGraphCompilation:
         history = result["tool_histories"][0]
         assert history["agent_type"] == AgentType.SEARCH.value
         assert history["tool_calls"][0]["status"] == "success"
+        assert "dag" not in result
+
+    def test_search_node_handles_tool_error(self):
+        from unittest.mock import patch
+
+        from app.graph.compiler import search_node
+        from app.graph.state import DAGDefinition, PlanNode, serialize_dag
+
+        node = PlanNode(node_type="search", query="test query")
+        state = create_initial_state("test query", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+        state["executing_nodes"] = [node.node_id]
+
+        with patch("app.agents.search.SearchAgent.execute_search", side_effect=RuntimeError("boom")):
+            result = search_node(state)
+
+        assert len(result["tool_histories"]) == 1
+        assert result["tool_histories"][0]["tool_calls"][0]["status"] == "error"
+
+    def test_search_node_returns_tool_trace_events(self):
+        from unittest.mock import patch
+
+        from app.graph.compiler import search_node
+        from app.graph.state import DAGDefinition, PlanNode, serialize_dag
+
+        node = PlanNode(node_type="search", query="test query")
+        state = create_initial_state("test query", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+        state["executing_nodes"] = [node.node_id]
+
+        with patch("app.agents.search.SearchAgent.execute_search", return_value=[]):
+            result = search_node(state)
+
+        event_types = [event["event_type"] for event in result["agent_trace"]]
+        assert "tool_start" in event_types
+        assert "tool_complete" in event_types
+
+    def test_execute_tool_batch_includes_dag_payload(self):
+        from app.graph.compiler import execute_tool_batch
+        from app.graph.state import DAGDefinition, PlanNode, serialize_dag
+
+        node = PlanNode(node_type="search", query="test query")
+        state = create_initial_state("test query", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+        state["current_executing_nodes"] = [node.node_id]
+        state["guardrail_decision"] = {"enabled_tools": ["search"]}
+
+        sends = execute_tool_batch(state)
+
+        assert len(sends) == 1
+        payload = sends[0].arg
+        assert "dag" in payload
+        assert payload["executing_nodes"] == [node.node_id]
 
 
 if __name__ == "__main__":

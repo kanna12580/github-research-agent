@@ -1,22 +1,39 @@
 services:
   api:
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: Dockerfile
     container_name: deepintel-api
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=postgresql://deepintel:deepintel_secret@db:5432/deepintel
-      - REDIS_URL=redis://redis:6379/0
-      - LLM_PROVIDER=qwen
-      - LLM_API_KEY=${QWEN_API_KEY:-}
-      - LLM_MODEL=qwen-plus
-      - RAG_EMBED_MODEL=BAAI/bge-zh-qwen2-int8
-      - RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
-      - RAG_RERANK_DEVICE=cpu
-      - PLAYWRIGHT_HEADLESS=true
-      - PLAYWRIGHT_POOL_SIZE=2
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://deepintel:deepintel_secret@db:5432/deepintel}
+      - REDIS_URL=${DOCKER_REDIS_URL:-redis://redis:6379/0}
+      - LLM_PROVIDER=${LLM_PROVIDER:-qwen}
+      - LLM_MODEL=${LLM_MODEL:-qwen-plus}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_BASE=${LLM_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-8192}
+      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-}
+      - LLM_FALLBACK_MODEL=${LLM_FALLBACK_MODEL:-}
+      - LLM_FALLBACK_API_KEY=${LLM_FALLBACK_API_KEY:-}
+      - RAG_EMBED_MODEL=${RAG_EMBED_MODEL:-BAAI/bge-zh-qwen2-int8}
+      - RAG_EMBED_DIMENSION=${RAG_EMBED_DIMENSION:-1024}
+      - RAG_RERANK_MODEL=${RAG_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      - RAG_RERANK_DEVICE=${RAG_RERANK_DEVICE:-cpu}
+      - RAG_RETRIEVAL_TOP_K=${RAG_RETRIEVAL_TOP_K:-20}
+      - RAG_RERANK_TOP_N=${RAG_RERANK_TOP_N:-10}
+      - RAG_RRF_K=${RAG_RRF_K:-60}
+      - PLAYWRIGHT_HEADLESS=${PLAYWRIGHT_HEADLESS:-true}
+      - PLAYWRIGHT_POOL_SIZE=${PLAYWRIGHT_POOL_SIZE:-2}
+      - PLAYWRIGHT_NAVIGATION_TIMEOUT=${PLAYWRIGHT_NAVIGATION_TIMEOUT:-30000}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_RELOAD=false
+      - API_LOG_LEVEL=${API_LOG_LEVEL:-INFO}
     depends_on:
       db:
         condition: service_healthy
@@ -33,15 +50,15 @@ services:
     image: pgvector/pgvector:pg16
     container_name: deepintel-db
     environment:
-      - POSTGRES_DB=deepintel
-      - POSTGRES_USER=deepintel
-      - POSTGRES_PASSWORD=deepintel_secret
+      - POSTGRES_DB=${POSTGRES_DB:-deepintel}
+      - POSTGRES_USER=${POSTGRES_USER:-deepintel}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-deepintel_secret}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U deepintel"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deepintel}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,7 +67,7 @@ services:
     image: redis:7-alpine
     container_name: deepintel-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     command: redis-server --appendonly yes
@@ -62,7 +79,7 @@ services:
       dockerfile: Dockerfile
     container_name: deepintel-frontend
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:80"
     depends_on:
       - api
     restart: unless-stopped

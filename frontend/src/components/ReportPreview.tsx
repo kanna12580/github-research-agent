@@ -11,9 +11,17 @@ interface ReportPreviewProps {
   report: string
   citations: Array<{ citation_id: string; source_url: string; source_title: string }>
   streaming?: boolean
+  emptyTitle?: string
+  emptyDescription?: string
 }
 
-function ReportPreview({ report, citations, streaming = false }: ReportPreviewProps) {
+function ReportPreview({
+  report,
+  citations,
+  streaming = false,
+  emptyTitle,
+  emptyDescription,
+}: ReportPreviewProps) {
   const citationMap = useMemo(() => {
     const map = new Map<string, { url: string; title: string }>()
     citations.forEach(c => {
@@ -40,7 +48,12 @@ function ReportPreview({ report, citations, streaming = false }: ReportPreviewPr
               <rect x="6" y="4" width="28" height="32" rx="4" stroke="currentColor" strokeWidth="1.5"/>
               <path d="M12 12H28M12 18H28M12 24H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
-            <p className="text-sm text-xmgray-400">输入研究主题后，报告将在此显示</p>
+            <p className="text-sm text-xmgray-500 font-medium">
+              {emptyTitle || '输入研究主题后，报告将在此显示'}
+            </p>
+            {emptyDescription && (
+              <p className="text-xs text-xmgray-400 mt-1">{emptyDescription}</p>
+            )}
           </>
         )}
       </div>

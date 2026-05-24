@@ -10,7 +10,6 @@ import logging
 from typing import TYPE_CHECKING
 
 import torch
-from sentence_transformers import SentenceTransformer
 
 from app.config import get_settings
 
@@ -36,8 +35,14 @@ class Embedder:
         logger.info(f"Embedder: using model={self.model_name}, device={self.device}")
 
     @property
-    def model(self) -> SentenceTransformer:
+    def model(self):
         if self._model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "sentence_transformers is required to load the embedder model"
+                ) from exc
             self._model = SentenceTransformer(self.model_name, device=self.device)
             logger.info(f"Embedder: model loaded successfully")
         return self._model

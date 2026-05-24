@@ -148,7 +148,7 @@ const features = [
       </svg>
     ),
     title: '自主研究工作流',
-    desc: '从查询到报告，全流程 AI 自动完成。Planner 动态规划、Agent 并行执行、Reflection 质量把控。',
+    desc: '围绕搜索对比主目标，把查询拆解、证据采集、分析和报告串成一条闭环。',
   },
   {
     icon: (
@@ -160,7 +160,7 @@ const features = [
       </svg>
     ),
     title: 'Research DAG 生成',
-    desc: 'LLM 动态生成研究计划 DAG，自动识别可并行节点，按拓扑序执行，最大化效率。',
+    desc: '由 Planner 生成可执行 DAG，自动识别可并行节点并按依赖顺序执行。',
   },
   {
     icon: (
@@ -170,8 +170,8 @@ const features = [
         <circle cx="14" cy="18" r="1.5" fill="currentColor"/>
       </svg>
     ),
-    title: 'Self-Reflection 校验',
-    desc: 'Reflection Agent 从事实性、一致性、完整性、引用覆盖率多维度校验，降低幻觉率。',
+    title: '证据校验与拒答',
+    desc: '检索不到证据就拒答，答案必须和文档、工具结果、引用保持一致。',
   },
   {
     icon: (
@@ -181,8 +181,8 @@ const features = [
         <rect x="12" y="10" width="4" height="4" stroke="currentColor" strokeWidth="1.5"/>
       </svg>
     ),
-    title: '工具驱动多 Agent',
-    desc: 'Search / Browser / RAG Agent 通过工具调用协作，非角色扮演，每个工具调用可追踪。',
+    title: '工具白名单与校验',
+    desc: '当前任务只暴露必要工具，参数 schema 强校验，防止乱调和乱传。',
   },
   {
     icon: (
@@ -193,7 +193,7 @@ const features = [
       </svg>
     ),
     title: '流式输出',
-    desc: '报告以 Markdown 形式流式生成，实时显示 Agent 思考过程和工具调用轨迹。',
+    desc: '研究过程和报告内容实时推送，前端可直接看到执行进度与阶段结果。',
   },
   {
     icon: (
@@ -202,8 +202,8 @@ const features = [
         <path d="M10 14L13 17L18 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
-    title: '引用溯源',
-    desc: '每个结论都有 Citation 标注，连接回原始来源，支持一键访问。',
+    title: '追踪与审计',
+    desc: 'guardrail trace、agent trace 和工具历史完整保留，便于复盘和定位问题。',
   },
 ]
 
@@ -212,7 +212,7 @@ function FeaturesSection() {
     <section className="max-w-6xl mx-auto px-6 md:px-8 py-24">
       <div className="text-center mb-16">
         <h2 className="section-title">核心能力</h2>
-        <p className="section-subtitle">六大核心技术架构，支撑端到端自主研究</p>
+        <p className="section-subtitle">六大核心能力，支撑搜索对比、取证分析与安全输出</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {features.map((feature, i) => (

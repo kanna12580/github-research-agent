@@ -10,6 +10,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.config import get_settings
+from app.db.connection import get_text_search_config
+from app.db.text_search import regconfig_sql_literal
 from app.graph.state import Citation, RAGResult, PlanStep
 
 if TYPE_CHECKING:
@@ -111,6 +113,9 @@ class RAGAgent:
 
                 # Fetch from DB
                 async with pool.acquire() as conn:
+                    fts_config = await get_text_search_config()
+                    fts_config_sql = regconfig_sql_literal(fts_config)
+
                     # pgvector ANN search
                     vector_rows = await conn.fetch("""
                         SELECT id, content, metadata,
@@ -121,14 +126,20 @@ class RAGAgent:
                     """, query_embedding)
 
                     # BM25 search
-                    bm25_rows = await conn.fetch("""
+                    bm25_rows = await conn.fetch(
+                        """
                         SELECT id, content, metadata,
-                               ts_rank(to_tsvector('chinese', content), plainto_tsquery('chinese', $1)) AS bm25_score
+                               ts_rank(
+                                   to_tsvector({fts_config}, content),
+                                   plainto_tsquery({fts_config}, $1)
+                               ) AS bm25_score
                         FROM documents
-                        WHERE to_tsvector('chinese', content) @@ plainto_tsquery('chinese', $1)
+                        WHERE to_tsvector({fts_config}, content) @@ plainto_tsquery({fts_config}, $1)
                         ORDER BY bm25_score DESC
                         LIMIT 30
-                    """, step.target_query)
+                        """.format(fts_config=fts_config_sql),
+                        step.target_query,
+                    )
 
                 # Build result lists
                 vector_results = {

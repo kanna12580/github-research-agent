@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.config import get_settings
+from app.guardrails import build_guardrail_decision, build_prompt_profile_message
 from app.graph.state import Evidence
 
 if TYPE_CHECKING:
@@ -71,12 +72,19 @@ Return a JSON object with these fields:
             Analysis text (Markdown format)
         """
         logger.info(f"Analyst: analyzing {len(evidence_list)} evidence items")
+        decision = build_guardrail_decision(user_query)
+        system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
+        if not evidence_list and not decision.reject_if_no_evidence:
+            system_prompt += (
+                "\n\n当前没有检索到外部证据。你可以基于模型已有知识回答简单事实问题，"
+                "但必须明确标注“未检索验证”，不要编造来源、引用或实时数据。"
+            )
 
         # Format evidence for the prompt
         formatted_evidence = self._format_evidence(evidence_list)
 
         messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": f"""Research Question: {user_query}
@@ -150,6 +158,6 @@ Also provide the structured JSON output."""
             for i, ev in enumerate(evidence_list[:5], 1):
                 lines.append(f"- {ev.content[:200]}...")
         else:
-            lines.append("\nNo sufficient evidence collected for analysis.")
+            lines.append("\nNo sufficient evidence collected for analysis. I don't know.")
 
         return "\n".join(lines)

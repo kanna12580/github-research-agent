@@ -130,6 +130,8 @@ Return JSON with a "queries" array of strings."""
                 "skip_disambig": "1",
             }
 
+            # Keep this aligned with the LangChain tool wrapper so the workflow
+            # does not fail on transient network latency.
             response = requests.get(url, params=params, timeout=10)
             if response.status_code != 200:
                 return []
@@ -197,12 +199,7 @@ Return JSON with a "queries" array of strings."""
 
         直接执行单个搜索查询，供 DAG executor 调用。
         """
-        from app.graph.state import PlanStep
-        step = PlanStep(
-            target_query=query,
-            node_type="search",
-        )
-        return self.execute([step], query)
+        return self._execute_search(query)
 
     def execute_for_node(self, node_query: str, context: str = "") -> list[SearchResult]:
         """兼容接口：根据节点 query 执行搜索。"""

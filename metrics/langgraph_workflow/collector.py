@@ -61,7 +61,9 @@ class LangGraphMetricsCollector:
     - 边转换次数、条件分支次数
     """
 
-    def __init__(self, output_dir: str | Path = "metrics/langgraph_workflow/data"):
+    def __init__(self, output_dir: str | Path = "metrics/langgraph_workflow/data", storage_path: str | Path | None = None):
+        if storage_path is not None:
+            output_dir = storage_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,7 +78,7 @@ class LangGraphMetricsCollector:
         workflow_id: str | None = None,
     ) -> str:
         """记录工作流开始"""
-        wf_id = workflow_id or f"wf-{uuid.uuid4().hex[:8]}"
+        wf_id = workflow_id or session_id or f"wf-{uuid.uuid4().hex[:8]}"
         record = WorkflowRecord(
             workflow_id=wf_id,
             session_id=session_id,
@@ -156,7 +158,7 @@ class LangGraphMetricsCollector:
         # 持久化
         self._persist_record(wf)
         logger.info(
-            f"[Metrics] Workflow ended: {wf_id}, status={status}, "
+            f"[Metrics] Workflow ended: {workflow_id}, status={status}, "
             f"duration={wf.duration_ms}ms, revisions={wf.revision_count}"
         )
 
@@ -183,7 +185,7 @@ class LangGraphMetricsCollector:
     def get_metrics(self) -> dict[str, Any]:
         """获取聚合指标"""
         if not self._workflows:
-            return {}
+            return {"summary": {"total_workflows": 0, "completed": 0, "failed": 0}}
 
         completed = [w for w in self._workflows.values() if w.status in ("completed", "failed")]
         if not completed:
@@ -227,6 +229,8 @@ class LangGraphMetricsCollector:
                 "total_workflows": len(self._workflows),
                 "completed_workflows": len([w for w in completed if w.status == "completed"]),
                 "failed_workflows": len([w for w in completed if w.status == "failed"]),
+                "completed": len([w for w in completed if w.status == "completed"]),
+                "failed": len([w for w in completed if w.status == "failed"]),
                 "success_rate": (
                     len([w for w in completed if w.status == "completed"]) / len(completed)
                     if completed else 0

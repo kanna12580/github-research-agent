@@ -1,274 +1,313 @@
 # Agentic Deep Research System (ADRS)
 
-> 基于 LangGraph 的自主研究 Agent 平台，展示五大核心架构能力。
+> 基于 LangGraph 的自主研究 Agent 平台，强调可执行 DAG、多 Agent 协作、SSE 流式输出、RAG 检索和反思校验。
 
----
+## 项目定位
 
-## 五大核心架构主题
+这个仓库是一个可展示 Agent Engineering 能力的研究系统。核心链路是：
 
-本系统以 **5 个核心技术主题** 为架构支柱，每个主题都是独立的工程能力维度：
-
-| # | 主题 | 核心能力 | 面试价值 |
-|---|------|---------|---------|
-| 1 | **Autonomous Research Workflow** | 用户输入 → 全自动端到端研究，无需人工干预 | 展示 Agent 自主性 |
-| 2 | **Research DAG Generation** | 动态生成研究计划 DAG，支持并行与条件分支 | 区别于 LangChain 链式结构 |
-| 3 | **Tool-driven Multi-Agent** | 多个专业 Agent 通过工具调用协作，非角色扮演 | 展示工具调用设计 |
-| 4 | **Long-running Stateful Agent** | 检查点持久化 + 会话恢复 + 长时间运行 | 区别于单次 API 调用 |
-| 5 | **Self-Reflection & Verification** | 反思循环 + 证据校验 + 质量门控 | 展示 Agent 自优化能力 |
-
----
-
-## 一句话定位
-
-**一个能证明你具备 Agent Engineering 能力的系统。**
-
-不是 CRUD，不是简单的 RAG 演示，而是：
-- **五大架构主题**：自主工作流、DAG 生成、工具协作、状态持久化、自校验
-- **LangGraph 状态机**：DAG + 循环 + 检查点 + 重规划
-- **Browser Agent**：Playwright 自动化网页研究
-- **Advanced RAG**：Hybrid Retrieval + Rerank + Citation
-- **生产级可观测性**：SSE 流式输出 + Agent Thought Trace
-
----
+`用户输入 -> Planner 生成 DAG -> 搜索/浏览/RAG 并行采集 -> Analyst 综合 -> Reflection 校验 -> Report 输出`
 
 ## 技术栈
 
-| 组件 | 选型 | 理由 |
-|------|------|------|
-| Agent Orchestration | **LangGraph** | 状态机编译器，支持 DAG+循环+检查点 |
-| LLM（主力） | **Qwen3.6 Plus** | 工具调用最强（48.2% MCPMark），成本极低 |
-| LLM（备选） | **DeepSeek V3.2** | 性价比极高 |
-| Browser Automation | **Playwright** | 异步原生 + 无障碍快照 |
-| Vector DB | **pgvector** | 一个 DB 做所有事 |
-| Rerank | **BGE-reranker-v2-m3** | 开源可控，多语言 |
-| Backend | **FastAPI + sse-starlette** | SSE 原生支持 |
-| Cache | **Redis** | 会话缓存 + 检查点 |
+| 层     | 选型                      | 作用                             |
+| ------ | ------------------------- | -------------------------------- |
+| 编排   | LangGraph                 | 状态机式工作流、条件分支、检查点 |
+| 后端   | FastAPI                   | HTTP API、SSE 流式接口           |
+| LLM    | OpenAI 兼容接口           | 支持 Qwen / DeepSeek / OpenAI    |
+| 检索   | pgvector + BM25 + rerank  | 混合检索与重排序                 |
+| 浏览器 | Playwright                | 网页抓取与页面提取               |
+| 数据库 | PostgreSQL                | 会话、引用、系统配置             |
+| 缓存   | Redis                     | 会话缓存、SSE 状态、运行时配置   |
+| 前端   | React + Vite + TypeScript | 研究界面与实时输出               |
 
-详细技术选型分析见 [SPEC.md](SPEC.md)。
+## 核心能力
 
----
+- 自动生成研究 DAG
+- 工具驱动的多 Agent 协作
+- 长生命周期会话与检查点
+- SSE 实时事件流
+- 证据驱动的报告生成
+- 反思校验与重规划
 
-## 架构预览
+## 目录结构
 
-```mermaid
-flowchart TB
-    UI[React Frontend] --> SSE[SSE Stream]
-    SSE --> API[FastAPI]
-
-    subgraph LangGraph["LangGraph Runtime"]
-        P[Planner<br/>主题 2: DAG生成]
-        DAGExec[DAG Executor<br/>主题 2: 执行调度]
-        S[Search Agent<br/>主题 3]
-        B[Browser Agent<br/>主题 3]
-        R[RAG Agent<br/>主题 3]
-        A[Analyst Agent]
-        F[Reflection Agent<br/>主题 5: 自校验]
-        RP[Report Gen]
-    end
-
-    API --> P
-    P --> DAGExec
-
-    DAGExec -->|"并行"| S
-    DAGExec -->|"并行"| B
-    DAGExec -->|"并行"| R
-
-    S --> A
-    B --> A
-    R --> A
-
-    A --> F
-    F -->|"通过"| RP
-    F -->|"重规划"| P
-
-    RP --> END[(END)]
+```text
+deepintel/
+├── app/                          # 后端主代码
+├── docs/                         # 设计、部署、模型与学习资料
+├── frontend/                     # 前端项目
+├── metrics/                      # 各能力主题的指标采集
+├── scripts/                      # 模型预下载与辅助脚本
+├── tests/                        # 单元测试与集成测试
+├── docker-compose.yml            # 本地一键启动编排
+├── Dockerfile                    # 后端镜像
+├── requirements.txt              # Python 依赖
+├── start-deepintel.ps1           # Windows 启动脚本
+├── SPEC.md                       # 技术规格文档
+└── README.md                     # 项目总览
 ```
 
-**五大主题的工程实现**：
+### `app/` 文件说明
 
-- `app/agents/planner.py` → **主题 2**：DAG 生成
-- `app/graph/compiler.py` → **主题 1 & 2**：工作流编排 + DAG 执行
-- `app/agents/search.py`, `browser.py`, `rag.py` → **主题 3**：工具驱动协作
-- `app/graph/state.py` → **主题 4**：检查点状态定义
-- `app/agents/reflection.py` → **主题 5**：自校验
+#### `app/main.py`
 
----
+- FastAPI 入口
+- 初始化日志、中间件、路由和生命周期
+- 启动时连接数据库，关闭时释放资源
 
-## 面试价值锚点
+#### `app/config.py`
 
-| 主题 | 面试问题 | 核心回答 |
-|------|---------|---------|
-| **LangGraph vs LangChain** | "为什么不用 LangChain？" | 链式 vs 状态机，DAG + 循环 + 检查点 |
-| **Research DAG** | "DAG 和固定流程有什么区别？" | 动态生成 + 拓扑序并行 + 条件分支 |
-| **Tool-driven** | "Agent 之间怎么协作？" | 工具调用而非角色对话，有明确输入输出 |
-| **Stateful Agent** | "怎么实现故障恢复？" | PostgresSaver 检查点 + 会话元数据 |
-| **Self-Reflection** | "怎么降低幻觉？" | 五维度校验 + 置信度传播 + 重规划 |
+- 统一读取环境变量
+- 定义 LLM、数据库、Redis、RAG、浏览器、API 配置
 
----
+#### `app/llm_client.py`
 
-## 快速开始
+- 构建 OpenAI 兼容客户端
+- 统一不同 LLM provider 的接入方式
+
+#### `app/api/`
+
+- `health.py`：健康检查与就绪检查
+- `research.py`：研究任务创建、状态查询、结果查询、SSE 流式接口
+- `config.py`：前端可配置的 LLM 运行时配置接口
+
+#### `app/agents/`
+
+- `planner.py`：把用户问题拆成 DAG
+- `search.py`：搜索 Agent
+- `browser.py`：浏览器 Agent
+- `rag.py`：RAG Agent
+- `analyst.py`：综合分析
+- `reflection.py`：事实校验与重规划判断
+- `report.py`：报告生成
+- `browser_demo.py`：浏览器能力演示
+
+#### `app/graph/`
+
+- `state.py`：LangGraph 状态、DAG、证据、引用、校验模型
+- `compiler.py`：把节点和边编译成可执行工作流
+- `nodes.py`：节点定义
+- `edges.py`：边路由定义
+
+#### `app/rag/`
+
+- `embedder.py`：向量嵌入
+- `retriever.py`：混合检索
+- `reranker.py`：重排序
+
+#### `app/tools/`
+
+- `search_tools.py`：搜索相关工具封装
+- `browser_tools.py`：浏览器操作封装
+- `retrieval_tools.py`：检索相关工具封装
+
+#### `app/db/`
+
+- `connection.py`：数据库与 Redis 连接
+- `models.py`：数据模型
+- `migrate.py`：建表与初始化 schema
+
+#### `app/observability/`
+
+- `sse_manager.py`：管理 SSE 事件队列
+- `trace.py`：Agent 事件追踪与结构化日志
+
+### 其他目录说明
+
+#### `frontend/`
+
+- `src/App.tsx`：前端主入口与视图切换
+- `src/main.tsx`：React 挂载入口
+- `src/components/ResearchDashboard.tsx`：研究工作台
+- `src/components/AgentTrace.tsx`：Agent 事件流展示
+- `src/components/ToolTrace.tsx`：工具调用流展示
+- `src/components/ReportPreview.tsx`：报告预览
+- `src/components/LLMConfigPanel.tsx`：LLM 配置面板
+- `src/hooks/useSSE.ts`：SSE 连接封装
+
+#### `metrics/`
+
+- `langgraph_workflow/`：工作流指标
+- `research_dag/`：DAG 质量与并行度指标
+- `multi_agent/`：多 Agent 协作指标
+- `stateful_agent/`：会话与恢复指标
+- `browser_agent/`：浏览器执行指标
+- `reflection_agent/`：校验与幻觉控制指标
+
+#### `tests/`
+
+- `tests/agents/`：Agent 单测
+- `tests/graph/`：图编排单测
+- `tests/integration/`：端到端流程测试
+
+#### `scripts/`
+
+- `preload_models.py`：预下载模型
+- `download_all_models.py`：一次性下载全部依赖模型
+
+#### `docs/`
+
+- `DEPLOYMENT.md`：部署说明
+- `MODEL_DOWNLOAD.md`：模型下载说明
+- `LLM_CONFIG_FRONTEND.md`：前端配置说明
+- `INTERVIEW_GUIDE.md`：面试讲解资料
+- `WBS.md`：工作分解与开发计划
+
+## 开发细节
+
+### 研究流程
+
+1. 用户在前端输入研究主题
+2. `app/api/research.py` 创建 session
+3. `app/graph/compiler.py` 编译 LangGraph
+4. `app/agents/planner.py` 生成 DAG
+5. `search / browser / rag` 并行采集证据
+6. `analyst.py` 生成分析结论
+7. `reflection.py` 判断是否需要重规划
+8. `report.py` 生成 Markdown 报告并推送 SSE
+
+### 状态与持久化
+
+- 研究状态定义在 `app/graph/state.py`
+- 会话数据写入 PostgreSQL
+- 检查点优先尝试 Redis，失败后回退到内存
+- `research_sessions` 保存任务主记录
+- `citations` 保存引用明细
+
+### SSE 与前端联动
+
+- 后端通过 `app/observability/sse_manager.py` 维护每个 session 的事件队列
+- 前端通过 `frontend/src/hooks/useSSE.ts` 订阅 `/api/v1/research/stream/{session_id}`
+- `ResearchDashboard` 组合展示 Agent Trace、Tool Trace 和报告内容
+
+### 配置优先级
+
+运行时配置优先级为：
+
+`前端运行时配置 > 数据库 system_config > 环境变量`
+
+这意味着可以在不改代码的情况下切换 LLM provider 和模型。
+
+## 本地开发
 
 ### 环境要求
 
 - Python 3.11+
-- PostgreSQL 15+（需启用 pgvector 扩展）
-- Redis 6+
-- Node.js 18+（前端）
+- Node.js 18+
+- PostgreSQL 16 + pgvector
+- Redis 7+
+- Playwright Chromium
 
-### 1. 安装依赖
-
-```bash
-git clone https://github.com/your-username/deepintel.git
-cd deepintel
-pip install -r requirements.txt
-```
-
-### 2. 配置环境变量
+### 后端启动
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入 API Key 和数据库连接
+.venv\Scripts\activate  # Windows
+pip install -r requirements-local.txt
+python -m app.db.migrate
+uvicorn app.main:app --reload --port 8000
 ```
 
-必需的环境变量：
+### 前端启动
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Docker 启动
+
+```bash
+docker compose up -d
+```
+
+Windows 也可以用：
+
+```powershell
+.\start-deepintel.ps1
+```
+
+### 本机启动
+
+```powershell
+.\start-deepintel.ps1 -Mode local
+```
+
+脚本会优先使用项目内 `.venv`，不存在时自动创建并安装依赖。
+如果你想直接使用现成的 conda 环境，可以先设置 `DEEPINTEL_PYTHON=C:\Users\wblxr\anaconda3\envs\used_pytorch\python.exe`。
+
+如果只想启动后端：
+
+```powershell
+.\start-deepintel.ps1 -Mode local -SkipFrontend
+```
+
+## 环境变量
+
+`.env.example` 已包含完整模板，核心项如下：
 
 ```env
-# LLM 配置
 LLM_PROVIDER=qwen
-QWEN_API_KEY=sk-xxx
-QWEN_MODEL=qwen-plus
+LLM_MODEL=qwen-plus
+LLM_API_KEY=your-api-key
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 
-# 数据库
-DATABASE_URL=postgresql://user:pass@localhost:5432/deepintel
+DATABASE_URL=postgresql://deepintel:deepintel_secret@localhost:5433/deepintel
 REDIS_URL=redis://localhost:6379/0
 
-# RAG
-EMBED_MODEL=BAAI/bge-zh-qwen2-int8
-RERANK_MODEL=BAAI/bge-reranker-v2-m3
+RAG_EMBED_MODEL=BAAI/bge-zh-qwen2-int8
+RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
+PLAYWRIGHT_HEADLESS=true
+API_PORT=8000
+FRONTEND_PORT=5173
 ```
 
-### 3. 初始化数据库
+## 开发与调试
+
+- 健康检查：`GET /api/v1/health`
+- 就绪检查：`GET /api/v1/ready`
+- 研究提交：`POST /api/v1/research`
+- 结果查看：`GET /api/v1/research/{session_id}`
+- 实时流：`GET /api/v1/research/stream/{session_id}`
+
+建议优先看这几个文件：
+
+- `app/main.py`
+- `app/api/research.py`
+- `app/graph/compiler.py`
+- `app/graph/state.py`
+- `frontend/src/components/ResearchDashboard.tsx`
+
+## 学习资料
+
+### 官方文档
+
+- [LangGraph](https://langchain-ai.github.io/langgraph/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [React](https://react.dev/)
+- [Vite](https://vite.dev/)
+- [Playwright Python](https://playwright.dev/python/)
+- [PostgreSQL](https://www.postgresql.org/docs/)
+- [Redis](https://redis.io/docs/)
+- [pgvector](https://github.com/pgvector/pgvector)
+
+### 代码相关资料
+
+- [SPEC.md](SPEC.md)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/MODEL_DOWNLOAD.md](docs/MODEL_DOWNLOAD.md)
+- [docs/INTERVIEW_GUIDE.md](docs/INTERVIEW_GUIDE.md)
+
+## 测试
 
 ```bash
-createdb deepintel
-psql -d deepintel -c "CREATE EXTENSION IF NOT EXISTS vector;"
-python -m app.db.migrate
+pytest
+cd frontend
+npm run build
 ```
 
-### 4. 启动服务
+## 备注
 
-```bash
-# 后端
-uvicorn app.main:app --reload --port 8000
-
-# 前端
-cd frontend && npm install && npm run dev
-```
-
-### 5. 验证安装
-
-访问 `http://localhost:5173`，输入研究查询：
-
-> "分析 2025 年中国新能源汽车充电桩市场格局"
-
-应该能看到：
-- Agent Trace 实时显示各 Agent 的思考过程
-- Tool Trace 显示搜索、浏览器、检索调用
-- 报告以 Markdown 形式流式生成
-- 每个结论附带 Citation 引用
-
----
-
-## 项目结构
-
-```
-deepintel/
-├── app/
-│   ├── main.py                     # FastAPI 入口
-│   ├── config.py                   # 配置管理
-│   ├── agents/                     # Agent 实现
-│   │   ├── planner.py            # [主题 2] DAG 生成
-│   │   ├── search.py             # [主题 3] 搜索工具
-│   │   ├── browser.py            # [主题 3] 浏览器工具
-│   │   ├── rag.py               # [主题 3] RAG 工具
-│   │   ├── analyst.py           # 分析工具
-│   │   ├── reflection.py       # [主题 5] 自校验
-│   │   └── report.py           # 报告生成
-│   ├── graph/                    # LangGraph 工作流
-│   │   ├── state.py            # [主题 4] 状态定义 + 检查点
-│   │   ├── compiler.py        # [主题 1 & 2] 工作流 + DAG 执行
-│   │   ├── nodes.py           # 节点定义
-│   │   └── edges.py            # 边路由
-│   ├── tools/                   # 工具定义
-│   │   ├── search_tools.py
-│   │   ├── browser_tools.py
-│   │   └── retrieval_tools.py
-│   ├── rag/                     # RAG 模块
-│   │   ├── embedder.py
-│   │   ├── retriever.py       # [主题 2] 混合检索
-│   │   └── reranker.py
-│   ├── db/                      # 数据库
-│   │   ├── connection.py
-│   │   ├── models.py
-│   │   └── migrate.py         # [主题 4] Schema 迁移
-│   ├── api/                     # API 层
-│   │   ├── research.py        # [主题 1] SSE 流式
-│   │   └── health.py
-│   └── observability/           # 可观测性
-│       ├── sse_manager.py      # [主题 1] SSE 管理
-│       └── trace.py
-├── metrics/                     # 五大主题各自的度量
-│   ├── langgraph_workflow/    # [主题 1] 工作流度量
-│   ├── research_dag/           # [主题 2] DAG 度量
-│   ├── multi_agent/           # [主题 3] Agent 协作度量
-│   ├── stateful_agent/        # [主题 4] 状态持久化度量
-│   └── reflection/            # [主题 5] 校验度量
-├── tests/                      # 测试
-│   ├── agents/
-│   ├── graph/
-│   └── integration/
-├── frontend/                   # 前端
-└── SPEC.md
-```
-
----
-
-## 开发路线图
-
-| 阶段 | 周期 | 主题 | 目标 |
-|------|------|------|------|
-| 第一阶段 | Day 1-7 | 主题 1 & 4 | LangGraph 核心 + 检查点持久化 |
-| 第二阶段 | Day 8-14 | 主题 2 | DAG 生成 + 拓扑序执行 |
-| 第三阶段 | Day 15-21 | 主题 3 | 工具驱动多 Agent 协作 |
-| 第四阶段 | Day 22-28 | 主题 5 | 自校验 + 重规划循环 |
-| 第五阶段 | Day 29-35 | 主题 1 | 前端 + 可观测性 + SSE |
-
----
-
-## 评估指标
-
-每个主题都有独立的度量文件夹（`metrics/`），采集以下指标：
-
-| 主题 | 核心指标 | 目标 |
-|------|---------|------|
-| **主题 1** | 工作流成功率、端到端时长 P95 | ≥85%, <10min |
-| **主题 2** | DAG 生成质量、并行度 | 覆盖率 >90%, >2x |
-| **主题 3** | 工具调用成功率、效率 | >90%, >80% |
-| **主题 4** | 检查点恢复成功率、会话隔离 | >95%, 零泄露 |
-| **主题 5** | 幻觉率、置信度准确性、重规划效率 | <5%, >0.7, ≤3次 |
-
----
-
-## 参考资料
-
-- [LangGraph 官方文档](https://langchain-ai.github.io/langgraph/)
-- [Playwright Python API](https://playwright.dev/python/)
-- [pgvector + PostgreSQL 指南](https://supabase.com/docs/guides/ai/vector-columns)
-- [BGE Reranker v2 M3](https://huggingface.co/BAAI/bge-reranker-v2-m3)
-- [RRF 融合算法论文](https://plg.uwaterloo.ca/~gclark/papers/reciprocal_rank.pdf)
-
----
-
-## License
-
-MIT
+- 本项目的 README 已按当前仓库代码整理
+- 如果后续新增模块，建议同步补充 `README.md` 和 `docs/`

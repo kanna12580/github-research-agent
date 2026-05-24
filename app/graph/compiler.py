@@ -58,6 +58,15 @@ from app.graph.state import (
     deserialize_dag,
 )
 from app.config import get_settings
+from app.guardrails import (
+    build_answer_gate_message,
+    build_evidence_gate,
+    build_guardrail_decision,
+    is_tool_allowed,
+    record_guardrail_event,
+)
+
+TOOL_NODE_TYPES = {"search", "browser", "rag"}
 
 
 # ==============================================================
@@ -170,6 +179,23 @@ def _make_tool_history(
     return history.model_dump()
 
 
+def _append_trace_event(
+    state: ResearchState,
+    event_type: EventType,
+    agent: str,
+    content: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Emit both agent trace and SSE-friendly state updates for the UI."""
+    from app.graph.state import AgentEvent
+
+    event = AgentEvent(agent=agent, event_type=event_type.value, content=content).model_dump()
+    if metadata:
+        event.update(metadata)
+    state.setdefault("agent_trace", []).append(event)
+    return event
+
+
 def _finish_tool_history(
     history: dict[str, Any],
     *,
@@ -212,6 +238,14 @@ def planner_node(state: ResearchState) -> dict:
     # 调用 Planner Agent 生成 DAG
     agent = PlannerAgent()
     dag: DAGDefinition = agent.create_dag(state["user_query"])
+    decision = build_guardrail_decision(state["user_query"], user_confirmed=state.get("user_confirmed", False))
+    record_guardrail_event(
+        state,
+        agent="planner",
+        event_type="guardrail_decision",
+        content="planner routed",
+        metadata=decision.model_dump(),
+    )
 
     # 追踪 DAG 生成
     emit_event(
@@ -228,6 +262,7 @@ def planner_node(state: ResearchState) -> dict:
         "dag": serialize_dag(dag),
         "status": TaskStatus.RUNNING.value,
         "session": session,
+        "guardrail_decision": decision.model_dump(),
     }
 
 
@@ -259,7 +294,7 @@ def dag_executor_node(state: ResearchState) -> dict:
         for node_id in batch:
             if node_id not in all_completed:
                 node = next((n for n in dag.nodes if n.node_id == node_id), None)
-                if node and node.status in (StepStatus.PENDING, StepStatus.RUNNING):
+                if node and node.node_type in TOOL_NODE_TYPES and node.status in (StepStatus.PENDING, StepStatus.RUNNING):
                     current_batch.append(node_id)
 
         if current_batch:
@@ -312,7 +347,12 @@ def should_continue_dag(state: ResearchState) -> str:
     """
     dag = deserialize_dag(state["dag"])
     completed = set(state.get("completed_nodes", []))
-    pending = [n for n in dag.nodes if n.node_id not in completed and n.status != StepStatus.SKIPPED]
+    pending = [
+        n for n in dag.nodes
+        if n.node_type in TOOL_NODE_TYPES
+        and n.node_id not in completed
+        and n.status != StepStatus.SKIPPED
+    ]
 
     if pending:
         return "continue"
@@ -338,6 +378,7 @@ def search_node(state: ResearchState) -> dict:
     from app.agents.search import SearchAgent
     from app.graph.state import Evidence, AgentEvent
     from app.observability.trace import emit_event, EventType
+    from app.guardrails import record_guardrail_event, validate_tool_invocation
 
     dag = deserialize_dag(state["dag"])
     executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
@@ -351,21 +392,40 @@ def search_node(state: ResearchState) -> dict:
     if not search_nodes:
         return {"collected_evidence": [], "tool_histories": [], "agent_trace": []}
 
-    emit_event(state, EventType.AGENT_START, "search", f"Executing {len(search_nodes)} search nodes")
+    trace = [
+        _append_trace_event(state, EventType.AGENT_START, "search", f"Executing {len(search_nodes)} search nodes")
+    ]
 
     agent = SearchAgent()
     all_evidence = []
     tool_histories = []
 
     for node in search_nodes:
-        emit_event(state, EventType.TOOL_START, "search", f"Searching: {node.query}")
+        trace.append(_append_trace_event(
+            state,
+            EventType.TOOL_START,
+            "search",
+            f"Searching: {node.query}",
+            {"tool_name": "duckduckgo_search", "args": {"query": node.query}},
+        ))
         tool_history = _make_tool_history(
             agent_type=AgentType.SEARCH,
             tool_name="execute_search",
             task_id=state.get("task_id"),
             query=node.query,
         )
-
+        valid, reason = validate_tool_invocation("duckduckgo_search", {"query": node.query})
+        if not valid:
+            _finish_tool_history(tool_history, status="error", error=reason or "invalid_args")
+            record_guardrail_event(
+                state,
+                agent="search",
+                event_type="tool_blocked",
+                content=reason or "invalid_args",
+                metadata={"tool": "duckduckgo_search", "query": node.query},
+            )
+            tool_histories.append(tool_history)
+            continue
         # 更新节点状态为 RUNNING
         node.status = StepStatus.RUNNING
 
@@ -390,28 +450,31 @@ def search_node(state: ResearchState) -> dict:
                 )
                 all_evidence.append(evidence)
 
-            emit_event(
+            trace.append(_append_trace_event(
                 state, EventType.TOOL_COMPLETE, "search",
-                f"Found {len(results)} results for: {node.query}"
-            )
+                f"Found {len(results)} results for: {node.query}",
+                {"tool_name": "duckduckgo_search", "status": "success", "result_summary": f"{len(results)} search results"},
+            ))
         except Exception as e:
             node.status = StepStatus.FAILED
             node.retry_count += 1
-            emit_event(state, EventType.ERROR, "search", f"Search failed: {str(e)}")
+            trace.append(_append_trace_event(
+                state,
+                EventType.TOOL_ERROR,
+                "search",
+                f"Search failed: {str(e)}",
+                {"tool_name": "duckduckgo_search", "status": "error", "error": str(e)},
+            ))
             _finish_tool_history(tool_history, status="error", error=str(e))
         tool_histories.append(tool_history)
 
-    # 更新 DAG
-    dag_serialized = serialize_dag(dag)
-
-    trace = [AgentEvent(
+    trace.append(AgentEvent(
         agent="search",
         event_type="agent_complete",
         content=f"Collected {len(all_evidence)} evidence from search"
-    ).model_dump()]
+    ).model_dump())
 
     return {
-        "dag": dag_serialized,
         "collected_evidence": [e.model_dump() for e in all_evidence],
         "tool_histories": tool_histories,
         "agent_trace": trace,
@@ -433,6 +496,7 @@ def browser_node(state: ResearchState) -> dict:
     from app.agents.browser import BrowserAgent
     from app.graph.state import Evidence, AgentEvent
     from app.observability.trace import emit_event, EventType
+    from app.guardrails import record_guardrail_event, validate_tool_invocation
 
     dag = deserialize_dag(state["dag"])
     executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
@@ -445,21 +509,40 @@ def browser_node(state: ResearchState) -> dict:
     if not browser_nodes:
         return {"collected_evidence": [], "tool_histories": [], "agent_trace": []}
 
-    emit_event(state, EventType.AGENT_START, "browser", f"Executing {len(browser_nodes)} browser nodes")
+    trace = [
+        _append_trace_event(state, EventType.AGENT_START, "browser", f"Executing {len(browser_nodes)} browser nodes")
+    ]
 
     agent = BrowserAgent()
     all_evidence = []
     tool_histories = []
 
     for node in browser_nodes:
-        emit_event(state, EventType.TOOL_START, "browser", f"Browsing: {node.query}")
+        trace.append(_append_trace_event(
+            state,
+            EventType.TOOL_START,
+            "browser",
+            f"Browsing: {node.query}",
+            {"tool_name": "browse_webpage", "args": {"query": node.query, "url": node.query}},
+        ))
         tool_history = _make_tool_history(
             agent_type=AgentType.BROWSER,
             tool_name="execute_browse",
             task_id=state.get("task_id"),
             query=node.query,
         )
-
+        valid, reason = validate_tool_invocation("browse_webpage", {"url": node.query, "max_chars": 2000})
+        if not valid:
+            _finish_tool_history(tool_history, status="error", error=reason or "invalid_args")
+            record_guardrail_event(
+                state,
+                agent="browser",
+                event_type="tool_blocked",
+                content=reason or "invalid_args",
+                metadata={"tool": "browse_webpage", "url": node.query},
+            )
+            tool_histories.append(tool_history)
+            continue
         node.status = StepStatus.RUNNING
 
         try:
@@ -482,27 +565,31 @@ def browser_node(state: ResearchState) -> dict:
                 )
                 all_evidence.append(evidence)
 
-            emit_event(
+            trace.append(_append_trace_event(
                 state, EventType.TOOL_COMPLETE, "browser",
-                f"Extracted {len(results)} pages for: {node.query}"
-            )
+                f"Extracted {len(results)} pages for: {node.query}",
+                {"tool_name": "browse_webpage", "status": "success", "result_summary": f"{len(results)} browser pages"},
+            ))
         except Exception as e:
             node.status = StepStatus.FAILED
             node.retry_count += 1
-            emit_event(state, EventType.ERROR, "browser", f"Browse failed: {str(e)}")
+            trace.append(_append_trace_event(
+                state,
+                EventType.TOOL_ERROR,
+                "browser",
+                f"Browse failed: {str(e)}",
+                {"tool_name": "browse_webpage", "status": "error", "error": str(e)},
+            ))
             _finish_tool_history(tool_history, status="error", error=str(e))
         tool_histories.append(tool_history)
 
-    dag_serialized = serialize_dag(dag)
-
-    trace = [AgentEvent(
+    trace.append(AgentEvent(
         agent="browser",
         event_type="agent_complete",
         content=f"Collected {len(all_evidence)} evidence from browser"
-    ).model_dump()]
+    ).model_dump())
 
     return {
-        "dag": dag_serialized,
         "collected_evidence": [e.model_dump() for e in all_evidence],
         "tool_histories": tool_histories,
         "agent_trace": trace,
@@ -524,6 +611,7 @@ def rag_node(state: ResearchState) -> dict:
     from app.agents.rag import RAGAgent
     from app.graph.state import Evidence, AgentEvent
     from app.observability.trace import emit_event, EventType
+    from app.guardrails import record_guardrail_event, validate_tool_invocation
 
     dag = deserialize_dag(state["dag"])
     executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
@@ -536,21 +624,40 @@ def rag_node(state: ResearchState) -> dict:
     if not rag_nodes:
         return {"collected_evidence": [], "tool_histories": [], "agent_trace": []}
 
-    emit_event(state, EventType.AGENT_START, "rag", f"Executing {len(rag_nodes)} RAG nodes")
+    trace = [
+        _append_trace_event(state, EventType.AGENT_START, "rag", f"Executing {len(rag_nodes)} RAG nodes")
+    ]
 
     agent = RAGAgent()
     all_evidence = []
     tool_histories = []
 
     for node in rag_nodes:
-        emit_event(state, EventType.TOOL_START, "rag", f"Retrieving: {node.query}")
+        trace.append(_append_trace_event(
+            state,
+            EventType.TOOL_START,
+            "rag",
+            f"Retrieving: {node.query}",
+            {"tool_name": "knowledge_base_search", "args": {"query": node.query}},
+        ))
         tool_history = _make_tool_history(
             agent_type=AgentType.RAG,
             tool_name="execute_retrieval",
             task_id=state.get("task_id"),
             query=node.query,
         )
-
+        valid, reason = validate_tool_invocation("knowledge_base_search", {"query": node.query, "top_k": 10})
+        if not valid:
+            _finish_tool_history(tool_history, status="error", error=reason or "invalid_args")
+            record_guardrail_event(
+                state,
+                agent="rag",
+                event_type="tool_blocked",
+                content=reason or "invalid_args",
+                metadata={"tool": "knowledge_base_search", "query": node.query},
+            )
+            tool_histories.append(tool_history)
+            continue
         node.status = StepStatus.RUNNING
 
         try:
@@ -573,27 +680,31 @@ def rag_node(state: ResearchState) -> dict:
                 )
                 all_evidence.append(evidence)
 
-            emit_event(
+            trace.append(_append_trace_event(
                 state, EventType.TOOL_COMPLETE, "rag",
-                f"Retrieved {len(results)} chunks for: {node.query}"
-            )
+                f"Retrieved {len(results)} chunks for: {node.query}",
+                {"tool_name": "knowledge_base_search", "status": "success", "result_summary": f"{len(results)} rag chunks"},
+            ))
         except Exception as e:
             node.status = StepStatus.FAILED
             node.retry_count += 1
-            emit_event(state, EventType.ERROR, "rag", f"RAG retrieval failed: {str(e)}")
+            trace.append(_append_trace_event(
+                state,
+                EventType.TOOL_ERROR,
+                "rag",
+                f"RAG retrieval failed: {str(e)}",
+                {"tool_name": "knowledge_base_search", "status": "error", "error": str(e)},
+            ))
             _finish_tool_history(tool_history, status="error", error=str(e))
         tool_histories.append(tool_history)
 
-    dag_serialized = serialize_dag(dag)
-
-    trace = [AgentEvent(
+    trace.append(AgentEvent(
         agent="rag",
         event_type="agent_complete",
         content=f"Collected {len(all_evidence)} evidence from RAG"
-    ).model_dump()]
+    ).model_dump())
 
     return {
-        "dag": dag_serialized,
         "collected_evidence": [e.model_dump() for e in all_evidence],
         "tool_histories": tool_histories,
         "agent_trace": trace,
@@ -620,7 +731,19 @@ def execute_tool_batch(state: ResearchState) -> list[Send]:
         return []
 
     dag = deserialize_dag(state["dag"])
+    decision = state.get("guardrail_decision") or {}
+    enabled_tools = set(decision.get("enabled_tools", ["search", "browser", "rag"]))
     sends = []
+
+    # 子节点在 LangGraph 中接收到的是 Send payload，不一定包含完整 state。
+    # 显式带上后续节点需要的上下文，避免子节点丢失 dag / query / session。
+    node_payload = {
+        "dag": state.get("dag"),
+        "task_id": state.get("task_id"),
+        "user_query": state.get("user_query"),
+        "session": state.get("session", {}),
+        "guardrail_decision": state.get("guardrail_decision"),
+    }
 
     for node_id in executing_nodes:
         node = next((n for n in dag.nodes if n.node_id == node_id), None)
@@ -628,8 +751,12 @@ def execute_tool_batch(state: ResearchState) -> list[Send]:
             continue
 
         # 根据节点类型分发
-        if node.node_type in ("search", "browser", "rag"):
-            sends.append(Send(node.node_type, {"executing_nodes": [node_id]}))
+        if node.node_type in ("search", "browser", "rag") and node.node_type in enabled_tools:
+            sends.append(Send(node.node_type, {
+                **node_payload,
+                "executing_nodes": [node_id],
+                "current_executing_nodes": [node_id],
+            }))
 
     return sends
 
@@ -653,18 +780,47 @@ def analyst_node(state: ResearchState) -> dict:
     from app.observability.trace import emit_event, EventType
 
     evidence_list = [deserialize_evidence(e) for e in state.get("collected_evidence", [])]
+    evidence_gate = build_evidence_gate(evidence_list)
+    decision = state.get("guardrail_decision") or {}
+    reject_if_no_evidence = bool(decision.get("reject_if_no_evidence", True))
 
-    emit_event(
+    start_event = _append_trace_event(
         state, EventType.AGENT_START, "analyst",
         f"Analyzing {len(evidence_list)} evidence items"
     )
 
+    if not evidence_gate.allowed and reject_if_no_evidence:
+        message = build_answer_gate_message(evidence_gate)
+        record_guardrail_event(
+            state,
+            agent="analyst",
+            event_type="answer_gate",
+            content=message,
+            metadata=evidence_gate.model_dump(),
+        )
+        trace = [start_event, AgentEvent(
+            agent="analyst",
+            event_type="agent_complete",
+            content=message,
+        ).model_dump()]
+        return {
+            "analysis": message,
+            "evidence_status": evidence_gate.model_dump(),
+            "revision_needed": False,
+            "agent_trace": trace,
+        }
+
     agent = AnalystAgent()
     analysis_text = agent.analyze(state["user_query"], evidence_list)
 
-    emit_event(state, EventType.AGENT_COMPLETE, "analyst", "Analysis complete")
+    complete_content = (
+        "Analysis complete without external evidence"
+        if not evidence_gate.allowed
+        else "Analysis complete"
+    )
+    complete_event = _append_trace_event(state, EventType.AGENT_COMPLETE, "analyst", complete_content)
 
-    trace = [AgentEvent(
+    trace = [start_event, complete_event, AgentEvent(
         agent="analyst",
         event_type="agent_complete",
         content=f"Generated {len(analysis_text)} chars of analysis from {len(evidence_list)} evidence items"
@@ -672,6 +828,7 @@ def analyst_node(state: ResearchState) -> dict:
 
     return {
         "analysis": analysis_text,
+        "evidence_status": evidence_gate.model_dump(),
         "agent_trace": trace,
     }
 
@@ -804,12 +961,44 @@ async def report_node(state: ResearchState) -> dict:
     from app.observability.sse_manager import get_sse_manager
 
     evidence_list = [deserialize_evidence(e) for e in state.get("collected_evidence", [])]
+    evidence_gate = build_evidence_gate(evidence_list)
+    decision = state.get("guardrail_decision") or {}
+    reject_if_no_evidence = bool(decision.get("reject_if_no_evidence", True))
     verification = state.get("verification")
     session_id = state.get("task_id")
     sse = get_sse_manager()
     pending_tasks = []
 
-    emit_event(state, EventType.AGENT_START, "report", "Generating final report")
+    start_event = _append_trace_event(state, EventType.AGENT_START, "report", "Generating final report")
+
+    if not evidence_gate.allowed and reject_if_no_evidence:
+        message = build_answer_gate_message(evidence_gate)
+        record_guardrail_event(
+            state,
+            agent="report",
+            event_type="answer_gate",
+            content=message,
+            metadata=evidence_gate.model_dump(),
+        )
+        trace = [start_event, AgentEvent(
+            agent="report",
+            event_type="agent_complete",
+            content=message,
+        ).model_dump()]
+        session = state.get("session", {})
+        session["status"] = TaskStatus.COMPLETED.value
+        session["completed_at"] = datetime.utcnow().isoformat()
+        return {
+            "final_report": f"# Research Report\n\n{message}\n",
+            "citations": [],
+            "status": TaskStatus.COMPLETED.value,
+            "session": session,
+            "review_status": {
+                "blocked": True,
+                **evidence_gate.model_dump(),
+            },
+            "agent_trace": trace,
+        }
 
     agent = ReportAgent()
 
@@ -852,9 +1041,9 @@ async def report_node(state: ResearchState) -> dict:
     session["status"] = TaskStatus.COMPLETED.value
     session["completed_at"] = datetime.utcnow().isoformat()
 
-    emit_event(state, EventType.AGENT_COMPLETE, "report", f"Report generated: {len(report)} chars")
+    complete_event = _append_trace_event(state, EventType.AGENT_COMPLETE, "report", f"Report generated: {len(report)} chars")
 
-    trace = [AgentEvent(
+    trace = [start_event, complete_event, AgentEvent(
         agent="report",
         event_type="agent_complete",
         content=f"Report: {len(report)} chars, {len(citations)} citations"
@@ -865,6 +1054,11 @@ async def report_node(state: ResearchState) -> dict:
         "citations": [c.model_dump() for c in citations],
         "status": TaskStatus.COMPLETED.value,
         "session": session,
+        "review_status": {
+            "blocked": False,
+            **evidence_gate.model_dump(),
+            "verification": verification,
+        },
         "agent_trace": trace,
     }
 

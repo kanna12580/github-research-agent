@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Literal
 
 from app.config import get_settings
+from app.guardrails import TaskIntent, build_prompt_profile_message, build_guardrail_decision
 from app.graph.state import (
     DAGDefinition,
     PlanNode,
@@ -168,6 +170,48 @@ Return a JSON object with dag_name, nodes, and edges."""
         """Check if the current provider supports response_format parameter."""
         return self.provider in ("openai", "qwen") and not self.client.base_url
 
+    def _extract_json_object(self, content: str) -> dict:
+        """
+        Extract a JSON object from model output.
+
+        Some providers occasionally wrap JSON in prose or code fences even when
+        the prompt requests JSON only. We try strict parsing first, then fall
+        back to fenced blocks and balanced-object extraction.
+        """
+        text = content.strip()
+        if not text:
+            raise json.JSONDecodeError("empty content", content, 0)
+
+        candidates = [text]
+
+        if "```json" in text:
+            start = text.find("```json") + len("```json")
+            end = text.find("```", start)
+            if end > start:
+                candidates.append(text[start:end].strip())
+
+        if "{" in text and "}" in text:
+            candidates.append(text[text.find("{"): text.rfind("}") + 1].strip())
+
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+
+        decoder = json.JSONDecoder()
+        for match in re.finditer(r"\{", text):
+            try:
+                parsed, _ = decoder.raw_decode(text[match.start():])
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+
+        raise json.JSONDecodeError("unable to extract JSON object", content, 0)
+
     def create_dag(self, query: str) -> DAGDefinition:
         """
         Generate a research DAG for the given query.
@@ -182,8 +226,14 @@ Return a JSON object with dag_name, nodes, and edges."""
         """
         logger.info(f"Planner: Generating DAG for query: {query[:100]}")
 
+        decision = build_guardrail_decision(query)
+        if decision.intent == TaskIntent.FACT_LOOKUP:
+            return self._fact_lookup_dag(query)
+
+        system_prompt = f"{build_prompt_profile_message(decision, query)}\n\n{self.SYSTEM_PROMPT}"
+
         messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": self.USER_TEMPLATE.format(query=query)},
         ]
 
@@ -204,7 +254,11 @@ Return a JSON object with dag_name, nodes, and edges."""
             if not content:
                 return self._fallback_dag(query)
 
-            data = json.loads(content)
+            try:
+                data = self._extract_json_object(content)
+            except json.JSONDecodeError as parse_error:
+                logger.warning(f"Planner: non-JSON output received, using fallback parser: {parse_error}")
+                return self._fallback_dag(query)
             dag = self._parse_dag(data, query)
 
             logger.info(
@@ -324,6 +378,31 @@ Return a JSON object with dag_name, nodes, and edges."""
                 PlanEdge(from_node="n1", to_node="n2", edge_type="sequential"),
                 PlanEdge(from_node="n2", to_node="n4", edge_type="sequential"),
                 PlanEdge(from_node="n3", to_node="n4", edge_type="sequential"),
+            ],
+        )
+
+    def _fact_lookup_dag(self, query: str) -> DAGDefinition:
+        """Generate a minimal DAG for simple fact lookup questions."""
+        return DAGDefinition(
+            dag_name=f"Fact-Lookup-{query[:20]}",
+            nodes=[
+                PlanNode(
+                    node_id="n1",
+                    node_type="search",
+                    query=query,
+                    depends_on=[],
+                    parallel=True,
+                ),
+                PlanNode(
+                    node_id="n2",
+                    node_type="analyst",
+                    query=f"回答事实问题：{query}",
+                    depends_on=["n1"],
+                    parallel=False,
+                ),
+            ],
+            edges=[
+                PlanEdge(from_node="n1", to_node="n2", edge_type="sequential"),
             ],
         )
 

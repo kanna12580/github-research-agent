@@ -33,7 +33,7 @@ class EventType(str, Enum):
     REFLECTION = "reflection"
     REPORT_CHUNK = "report_chunk"
     REPORT_CITATION = "report_citation"
-    ERROR = "error"
+    WORKFLOW_ERROR = "workflow_error"
     DONE = "done"
 
 
@@ -176,7 +176,7 @@ class AgentTracer:
 
     def error(self, error_type: str, message: str, recoverable: bool = True) -> None:
         """Record an error."""
-        self._emit(EventType.ERROR, {
+        self._emit(EventType.WORKFLOW_ERROR, {
             "error_type": error_type,
             "message": message,
             "recoverable": recoverable,
