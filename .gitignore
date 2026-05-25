@@ -1,0 +1,58 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node and frontend builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Runtime files
+*.log
+*.log.*
+logs/
+tmp/
+.cache/
+reports/
+artifacts/
+mlruns/
+mlartifacts/
+
+# Local persistence and downloaded assets
+*.db
+*.sqlite
+*.sqlite3
+models/
+downloads/
+pgdata/
+redisdata/
+
+# Browser automation output
+playwright-report/
+test-results/
+screenshots/
