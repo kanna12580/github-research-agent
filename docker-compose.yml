@@ -12,7 +12,7 @@ services:
       - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql://deepintel:deepintel_secret@db:5432/deepintel}
       - REDIS_URL=${DOCKER_REDIS_URL:-redis://redis:6379/0}
       - LLM_PROVIDER=${LLM_PROVIDER:-qwen}
-      - LLM_MODEL=${LLM_MODEL:-qwen-plus}
+      - LLM_MODEL=${LLM_MODEL:-qwen3.5-flash}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_API_BASE=${LLM_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}

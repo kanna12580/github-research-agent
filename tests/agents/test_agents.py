@@ -146,6 +146,15 @@ class TestBrowserAgent:
         assert result.extracted_content == ""
         assert len(result.citations) == 0
 
+    def test_resolve_target_extracts_embedded_url(self):
+        from app.agents.browser import BrowserAgent
+
+        agent = BrowserAgent()
+
+        assert agent._resolve_target(
+            "Read official source: https://github.com/langchain-ai/langgraph."
+        ) == "https://github.com/langchain-ai/langgraph"
+
 
 class TestRAGAgent:
     def test_rag_agent_import(self):

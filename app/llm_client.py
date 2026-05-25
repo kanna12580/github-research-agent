@@ -90,7 +90,7 @@ def create_llm_client(
 def get_llm_model() -> str:
     """Get the current LLM model name."""
     config = get_llm_client_config()
-    return config.get("model", "qwen-plus")
+    return config.get("model", "qwen3.5-flash")
 
 
 def get_llm_temperature() -> float:

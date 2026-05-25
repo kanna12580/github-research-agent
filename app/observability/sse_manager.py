@@ -137,6 +137,8 @@ class SSEManager:
                     "event": event["type"],
                     "data": json.dumps(event["data"], ensure_ascii=False),
                 }
+                if event["type"] in ("done", "workflow_error"):
+                    return
 
             while True:
                 event = await queue.get()
@@ -144,6 +146,8 @@ class SSEManager:
                     "event": event["type"],
                     "data": json.dumps(event["data"], ensure_ascii=False),
                 }
+                if event["type"] in ("done", "workflow_error"):
+                    return
         except asyncio.CancelledError:
             logger.info(f"SSE stream cancelled for session {session_id}")
             raise

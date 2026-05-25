@@ -36,7 +36,7 @@ class LLMConfigRequest(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        description="Model name, e.g., qwen-plus, deepseek-chat, gpt-4o"
+        description="Model name, e.g., qwen3.5-flash, deepseek-chat, gpt-4o"
     )
     api_key: str = Field(
         ...,
@@ -200,7 +200,7 @@ async def get_llm_config():
         data = db_config["data"]
         return LLMConfigResponse(
             provider=data.get("provider", "qwen"),
-            model=data.get("model", "qwen-plus"),
+            model=data.get("model", "qwen3.5-flash"),
             api_key_masked=mask_api_key(data.get("api_key", "")),
             api_base=data.get("api_base"),
             temperature=data.get("temperature", 0.7),
@@ -239,7 +239,7 @@ async def update_llm_config(config: LLMConfigRequest):
 
     # Validate provider-specific model names
     provider_models = {
-        "qwen": ["qwen-plus", "qwen-turbo", "qwen-max", "qwen-long", "qwen2.5-72b-instruct"],
+        "qwen": ["qwen3.5-flash", "qwen-plus", "qwen-turbo", "qwen-max", "qwen-long", "qwen2.5-72b-instruct"],
         "deepseek": ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
         "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1", "o1-mini"],
     }
@@ -330,6 +330,7 @@ async def get_available_providers():
                 "name": "通义千问 (Qwen)",
                 "description": "阿里云大模型，中文能力强，工具调用优秀",
                 "models": [
+                    {"id": "qwen3.5-flash", "name": "Qwen3.5 Flash", "description": "多模态、快速响应，适合 Agent 调研"},
                     {"id": "qwen-plus", "name": "Qwen Plus", "description": "推荐，性价比高"},
                     {"id": "qwen-turbo", "name": "Qwen Turbo", "description": "速度快，成本低"},
                     {"id": "qwen-max", "name": "Qwen Max", "description": "最强能力"},
@@ -367,7 +368,7 @@ async def get_available_providers():
         ],
         "default": {
             "provider": "qwen",
-            "model": "qwen-plus",
+            "model": "qwen3.5-flash",
         },
     }
 

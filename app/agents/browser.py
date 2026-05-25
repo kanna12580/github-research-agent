@@ -662,6 +662,10 @@ class BrowserAgent:
         if query_or_url.startswith("http://") or query_or_url.startswith("https://"):
             return query_or_url
 
+        embedded_url = re.search(r"https?://[^\s)\]}>,\"']+", query_or_url)
+        if embedded_url:
+            return embedded_url.group(0).rstrip(".,;:")
+
         # 包含空格但不以 http 开头 → 可能是查询或主题
         return self._url_discovery.query_to_search_url(query_or_url)
 

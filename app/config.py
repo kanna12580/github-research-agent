@@ -22,7 +22,7 @@ class LLMSettings(BaseSettings):
         description="Primary LLM provider"
     )
     model: str = Field(
-        default="qwen-plus",
+        default="qwen3.5-flash",
         description="Model name for primary provider"
     )
     api_key: str = Field(

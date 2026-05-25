@@ -641,12 +641,13 @@ def browser_node(state: ResearchState) -> dict:
     max_results = budget.get("browser_max_results", 2)
 
     for node in browser_nodes[:max_results]:
+        target_url = agent._resolve_target(node.query)
         trace.append(_append_trace_event(
             state,
             EventType.TOOL_START,
             "browser",
             f"Browsing: {node.query}",
-            {"tool_name": "browse_webpage", "args": {"query": node.query, "url": node.query}},
+            {"tool_name": "browse_webpage", "args": {"query": node.query, "url": target_url}},
         ))
         tool_history = _make_tool_history(
             agent_type=AgentType.BROWSER,
@@ -654,7 +655,7 @@ def browser_node(state: ResearchState) -> dict:
             task_id=state.get("task_id"),
             query=node.query,
         )
-        valid, reason = validate_tool_invocation("browse_webpage", {"url": node.query, "max_chars": 2000})
+        valid, reason = validate_tool_invocation("browse_webpage", {"url": target_url, "max_chars": 2000})
         if not valid:
             _finish_tool_history(tool_history, status="error", error=reason or "invalid_args")
             record_guardrail_event(
@@ -662,14 +663,14 @@ def browser_node(state: ResearchState) -> dict:
                 agent="browser",
                 event_type="tool_blocked",
                 content=reason or "invalid_args",
-                metadata={"tool": "browse_webpage", "url": node.query},
+                metadata={"tool": "browse_webpage", "url": target_url},
             )
             tool_histories.append(tool_history)
             continue
         node.status = StepStatus.RUNNING
 
         try:
-            results = agent.execute_browse(node.query)
+            results = agent.execute_browse(target_url)
             node.result = {"results": [r.model_dump() for r in results]}
             node.confidence = 0.85 if results else 0.0
             _finish_tool_history(
@@ -1056,8 +1057,14 @@ def replan_node(state: ResearchState) -> dict:
     # 重置 DAG 执行状态
     dag = deserialize_dag(state["dag"])
     for node in dag.nodes:
-        if node.status in (StepStatus.PENDING, StepStatus.FAILED):
+        # A revision must collect fresh evidence; otherwise all DONE nodes
+        # cause LangGraph to terminate before reaching report generation.
+        if node.node_type in TOOL_NODE_TYPES:
             node.status = StepStatus.PENDING
+            node.result = None
+            node.confidence = 0.0
+            node.retry_count = 0
+            node.evidence_ids = []
 
     from app.observability.trace import emit_event, EventType
     emit_event(

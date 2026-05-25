@@ -77,6 +77,30 @@ class TestConditionalRouting:
         }
         assert should_revise(state) == "generate_report"
 
+    def test_replan_resets_completed_tool_nodes_for_next_iteration(self):
+        from app.graph.compiler import replan_node
+        from app.graph.state import DAGDefinition, PlanNode, deserialize_dag, serialize_dag
+
+        node = PlanNode(node_type="search", query="test query")
+        node.status = StepStatus.DONE
+        node.result = {"results": ["old evidence"]}
+        node.confidence = 0.8
+        node.retry_count = 1
+        node.evidence_ids = ["old-id"]
+        state = create_initial_state("test query", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+
+        result = replan_node(state)
+        replanned = deserialize_dag(result["dag"])
+        reset_node = replanned.nodes[0]
+
+        assert result["revision_count"] == 1
+        assert reset_node.status == StepStatus.PENDING
+        assert reset_node.result is None
+        assert reset_node.confidence == 0.0
+        assert reset_node.retry_count == 0
+        assert reset_node.evidence_ids == []
+
 
 class TestGraphCompilation:
     def test_compile_research_graph(self):

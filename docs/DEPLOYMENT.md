@@ -70,7 +70,7 @@ cp .env.example .env
 ```bash
 # ===== LLM 配置 =====
 LLM_PROVIDER=qwen                    # qwen | deepseek | openai
-LLM_MODEL=qwen-plus                  # 模型名称
+LLM_MODEL=qwen3.5-flash              # 模型名称
 LLM_API_KEY=your-api-key-here        # API Key
 LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1  # API Base URL
 
@@ -465,7 +465,7 @@ playwright open https://example.com
 curl -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
   -H "Authorization: Bearer $LLM_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "qwen-plus", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "qwen3.5-flash", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 **问题 4: SSE 连接中断**

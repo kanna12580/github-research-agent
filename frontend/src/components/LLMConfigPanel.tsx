@@ -72,7 +72,7 @@ function LLMConfigPanel({ onClose }: LLMConfigPanelProps) {
 
   // Form state
   const [provider, setProvider] = useState('qwen')
-  const [model, setModel] = useState('qwen-plus')
+  const [model, setModel] = useState('qwen3.5-flash')
   const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
   const [temperature, setTemperature] = useState(0.7)

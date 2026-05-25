@@ -163,7 +163,7 @@ curl -X POST https://api.deepseek.com/v1/chat/completions \
 curl http://localhost:8000/api/v1/config/llm/providers
 
 # 切换为推荐的模型
-# Qwen: qwen-plus
+# Qwen: qwen3.5-flash
 # DeepSeek: deepseek-chat
 # OpenAI: gpt-4o
 ```
@@ -174,7 +174,7 @@ curl http://localhost:8000/api/v1/config/llm/providers
 ```env
 # 设置默认配置
 LLM_PROVIDER=qwen
-LLM_MODEL=qwen-plus
+LLM_MODEL=qwen3.5-flash
 LLM_API_KEY=sk-production-key
 
 # 启用备用模型

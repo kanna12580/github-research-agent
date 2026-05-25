@@ -265,7 +265,7 @@ Windows 也可以用：
 
 ```env
 LLM_PROVIDER=qwen
-LLM_MODEL=qwen-plus
+LLM_MODEL=qwen3.5-flash
 LLM_API_KEY=your-api-key
 LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 

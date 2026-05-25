@@ -171,6 +171,17 @@ class TestSSEIntegration:
         assert any(event["event"] == "workflow_error" for event in events)
 
     @pytest.mark.asyncio
+    async def test_sse_stream_closes_after_done_event(self, sse_manager):
+        """Terminal events should close an EventSource stream without client cancellation."""
+        session_id = "test-completed-stream"
+
+        await sse_manager.publish(session_id, "done", {"status": "completed"})
+
+        events = [event async for event in sse_manager.stream(session_id)]
+
+        assert [event["event"] for event in events] == ["connected", "done"]
+
+    @pytest.mark.asyncio
     async def test_sse_multiple_sessions(self, sse_manager):
         """Test SSE with multiple concurrent sessions."""
         sessions = ["session-1", "session-2", "session-3"]
