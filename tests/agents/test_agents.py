@@ -244,6 +244,38 @@ class TestReportAgent:
         assert len(citations) == 1
         assert len(report_citations) == 1
 
+    def test_generate_stream_deduplicates_repeated_source_urls(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.side_effect = RuntimeError("offline")
+        repeated_source = [
+            Evidence(
+                content="First pass evidence",
+                source_title="Source",
+                source_url="https://example.com/source",
+                source_type="web",
+                collected_by=AgentType.BROWSER,
+            ),
+            Evidence(
+                content="Second pass evidence",
+                source_title="Source",
+                source_url="https://example.com/source",
+                source_type="web",
+                collected_by=AgentType.BROWSER,
+            ),
+        ]
+
+        _, citations = agent.generate_stream(
+            user_query="Test topic",
+            analysis="Test analysis",
+            evidence_list=repeated_source,
+            reflection=None,
+        )
+
+        assert len(citations) == 1
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

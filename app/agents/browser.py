@@ -761,7 +761,7 @@ class BrowserAgent:
             for h in headings[:20]:
                 text = (await h.inner_text()).strip()
                 if text and len(text) > 3:
-                    tag = h.evaluate("el => el.tagName")
+                    tag = await h.evaluate("el => el.tagName")
                     level = min(int(tag[1]), 4)
                     prefix = "#" * level
                     parts.append(f"{prefix} {text}")

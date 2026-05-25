@@ -56,7 +56,7 @@ docker compose run --rm --no-deps `
   api pytest -q tests/graph/test_graph.py tests/agents/test_agents.py tests/integration/test_workflow.py
 ```
 
-Result: `69 passed`, with one upstream LangGraph deprecation warning about
+Result: `70 passed`, with one upstream LangGraph deprecation warning about
 importing `Send` from `langgraph.constants`.
 
 End-to-end verification task:
@@ -71,11 +71,11 @@ Observed result:
 
 | Check | Result |
 | --- | --- |
-| Session ID | `18c37059-bb4d-45d0-8eff-a48f7ceb6952` |
+| Session ID | `c90e88ed-9da6-4347-acbf-9846a1dc01b9` |
 | Final status | `completed` |
 | SSE events | Included `tool_complete`, `report_citation`, `report_chunk`, and `done` |
-| Generated report | 1440 characters |
-| Stored citations | 2 GitHub-page citations |
+| Generated report | 798 characters |
+| Stored citations | 1 unique GitHub-page citation |
 
 ## Current Limitations
 
@@ -92,9 +92,8 @@ yet a full LLM-backed acceptance run:
 - DuckDuckGo search returned intermittent HTTP `202`; the successful evidence
   run used a directly accessible GitHub repository page through the Browser
   Agent.
-- Replanning can collect the same page in more than one pass, producing
-  duplicate stored citations. Deduplication should be added before using the
-  system for comparative reports.
+- Replanning can collect the same page in more than one pass; report generation
+  now deduplicates evidence by source URL before storing citations.
 - Browser-plugin UI automation could not be completed in this Codex session
   because the installed plugin directory did not contain its required
   `scripts/browser-client.mjs` runtime file. Frontend build and HTTP/API proxy

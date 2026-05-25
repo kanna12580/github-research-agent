@@ -138,6 +138,7 @@ class ReportAgent:
             Tuple of (report_markdown, citations_list)
         """
         logger.info(f"Report: generating report for query: {user_query[:80]}")
+        evidence_list = self._deduplicate_evidence(evidence_list)
         decision = build_guardrail_decision(user_query)
         budget = get_research_budget(output_length)
         system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
@@ -233,6 +234,20 @@ Make sure every factual claim has a [citation:N] reference."""
             fallback = self._fallback_report(user_query, evidence_list, citations)
             self._emit_fallback_chunks(fallback, on_chunk)
             return fallback, citations
+
+    def _deduplicate_evidence(self, evidence_list: list[Evidence]) -> list[Evidence]:
+        """Keep one evidence item per source URL across revision passes."""
+        unique: list[Evidence] = []
+        seen_urls: set[str] = set()
+        for evidence in evidence_list:
+            source_url = (evidence.source_url or "").strip()
+            url_key = source_url.casefold()
+            if url_key and url_key in seen_urls:
+                continue
+            if url_key:
+                seen_urls.add(url_key)
+            unique.append(evidence)
+        return unique
 
     def _build_citations(self, evidence_list: list[Evidence]) -> list[Citation]:
         """Build a stable citation list from collected evidence."""
