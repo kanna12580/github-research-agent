@@ -69,6 +69,25 @@ class RAGAgent:
             self._reranker = Reranker()
         return self._reranker
 
+    async def _has_documents(self, pool, group: str | None = None) -> bool:
+        """Check for usable knowledge-base documents before loading local models."""
+        async with pool.acquire() as conn:
+            return bool(await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM documents
+                    WHERE (
+                        $1::text IS NULL
+                        OR metadata->>'group' = $1::text
+                        OR metadata->>'source_group' = $1::text
+                        OR metadata->>'knowledge_group' = $1::text
+                    )
+                )
+                """,
+                group,
+            ))
+
     async def close(self) -> None:
         """
         Close all resources held by the agent.
@@ -102,6 +121,10 @@ class RAGAgent:
         logger.info(f"RAG Agent: processing {len(plan_steps)} steps")
 
         pool = await self._get_db_pool()
+        if not await self._has_documents(pool, group):
+            logger.info("RAG Agent: knowledge base is empty; skipping embedding model initialization")
+            return []
+
         embedder = await self._get_embedder()
         reranker = await self._get_reranker()
 

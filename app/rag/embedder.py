@@ -1,7 +1,7 @@
 """
 BGE Embedder: generates vector embeddings for queries and documents.
 
-Supports BAAI/bge-zh-qwen2-int8 (Chinese-optimized, INT8 quantized).
+Supports BAAI/bge-m3 (multilingual, 1024-dimensional embeddings).
 """
 
 from __future__ import annotations

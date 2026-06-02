@@ -14,13 +14,13 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-qwen}
       - LLM_MODEL=${LLM_MODEL:-qwen3.5-flash}
       - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_API_BASE=${LLM_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - LLM_API_BASE=${LLM_API_BASE:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
       - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-8192}
       - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-}
       - LLM_FALLBACK_MODEL=${LLM_FALLBACK_MODEL:-}
       - LLM_FALLBACK_API_KEY=${LLM_FALLBACK_API_KEY:-}
-      - RAG_EMBED_MODEL=${RAG_EMBED_MODEL:-BAAI/bge-zh-qwen2-int8}
+      - RAG_EMBED_MODEL=${RAG_EMBED_MODEL:-BAAI/bge-m3}
       - RAG_EMBED_DIMENSION=${RAG_EMBED_DIMENSION:-1024}
       - RAG_RERANK_MODEL=${RAG_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
       - RAG_RERANK_DEVICE=${RAG_RERANK_DEVICE:-cpu}
@@ -34,6 +34,9 @@ services:
       - API_PORT=8000
       - API_RELOAD=false
       - API_LOG_LEVEL=${API_LOG_LEVEL:-INFO}
+      - HTTP_PROXY=${DOCKER_HTTP_PROXY:-}
+      - HTTPS_PROXY=${DOCKER_HTTPS_PROXY:-}
+      - NO_PROXY=${DOCKER_NO_PROXY:-db,redis,localhost,127.0.0.1}
     depends_on:
       db:
         condition: service_healthy

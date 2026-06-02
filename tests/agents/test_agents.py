@@ -4,7 +4,7 @@ Tests for individual agent implementations.
 
 import asyncio
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.graph.state import PlanStep, StepStatus, Evidence, AgentType
 
 
@@ -161,6 +161,23 @@ class TestRAGAgent:
         from app.agents.rag import RAGAgent
         agent = RAGAgent()
         assert agent is not None
+
+    @pytest.mark.asyncio
+    async def test_empty_knowledge_base_skips_local_model_loading(self):
+        from app.agents.rag import RAGAgent
+
+        agent = RAGAgent()
+        pool = MagicMock()
+        agent._get_db_pool = AsyncMock(return_value=pool)
+        agent._has_documents = AsyncMock(return_value=False)
+        agent._get_embedder = AsyncMock(side_effect=AssertionError("embedder should not load"))
+        agent._get_reranker = AsyncMock(side_effect=AssertionError("reranker should not load"))
+
+        results = await agent.execute_async([], "query")
+
+        assert results == []
+        agent._get_embedder.assert_not_awaited()
+        agent._get_reranker.assert_not_awaited()
 
 
 class TestAnalystAgent:

@@ -49,7 +49,7 @@ graph TD
 提供商: 通义千问 (Qwen)
 模型: Qwen Plus
 API Key: sk-xxxxxxxxxxxxxxxxxxxxxxxx
-API Base: https://dashscope.aliyuncs.com/compatible-mode/v1
+API Base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 Temperature: 0.7
 Max Tokens: 8192
 ```

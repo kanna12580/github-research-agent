@@ -267,12 +267,12 @@ Windows 也可以用：
 LLM_PROVIDER=qwen
 LLM_MODEL=qwen3.5-flash
 LLM_API_KEY=your-api-key
-LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_API_BASE=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 
 DATABASE_URL=postgresql://deepintel:deepintel_secret@localhost:5433/deepintel
 REDIS_URL=redis://localhost:6379/0
 
-RAG_EMBED_MODEL=BAAI/bge-zh-qwen2-int8
+RAG_EMBED_MODEL=BAAI/bge-m3
 RAG_RERANK_MODEL=BAAI/bge-reranker-v2-m3
 PLAYWRIGHT_HEADLESS=true
 API_PORT=8000

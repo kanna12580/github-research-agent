@@ -318,7 +318,7 @@ def mock_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         fallback_api_key = None
 
     class MockRAGSettings:
-        embed_model = "BAAI/bge-zh-qwen2-int8"
+        embed_model = "BAAI/bge-m3"
         embed_dimension = 1024
         rerank_model = "BAAI/bge-reranker-v2-m3"
         rerank_device = "cpu"

@@ -26,7 +26,7 @@ Agentic Deep Research System 使用两种类型的模型：
 
 ### 1. RAG 嵌入模型
 
-**模型名称**: `BAAI/bge-zh-qwen2-int8`
+**模型名称**: `BAAI/bge-m3`
 - **用途**: 将文本转换为向量嵌入
 - **大小**: 约 400MB-1GB
 - **语言**: 中文优化
@@ -35,7 +35,7 @@ Agentic Deep Research System 使用两种类型的模型：
 **首次运行自动下载**:
 ```bash
 # 首次运行时会自动从 HuggingFace 下载
-python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('BAAI/bge-zh-qwen2-int8')"
+python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('BAAI/bge-m3')"
 ```
 
 ### 2. RAG 重排序模型
@@ -126,7 +126,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 ### 更新本地模型
 ```bash
 # 删除旧模型缓存
-rm -rf ~/.cache/huggingface/hub/models--BAAI--bge-zh-qwen2-int8/
+rm -rf ~/.cache/huggingface/hub/models--BAAI--bge-m3/
 rm -rf ~/.cache/huggingface/hub/models--BAAI--bge-reranker-v2-m3/
 
 # 重启服务会自动下载最新版本
@@ -198,7 +198,7 @@ ln -s /big-disk/.cache/huggingface ~/.cache/huggingface
 RAG_RERANK_DEVICE=cpu
 
 # 使用量化模型
-RAG_EMBED_MODEL=BAAI/bge-zh-qwen2-int8  # 已量化
+RAG_EMBED_MODEL=BAAI/bge-m3
 ```
 
 ## 总结

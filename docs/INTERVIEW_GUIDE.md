@@ -120,7 +120,7 @@ class LLMConfig:
     @property
     def api_base(self) -> str:
         bases = {
-            "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "qwen": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
             "deepseek": "https://api.deepseek.com/v1",
             "openai": "https://api.openai.com/v1",
         }

@@ -336,7 +336,7 @@ async def get_available_providers():
                     {"id": "qwen-max", "name": "Qwen Max", "description": "最强能力"},
                     {"id": "qwen-long", "name": "Qwen Long", "description": "超长上下文"},
                 ],
-                "api_base_default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "api_base_default": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
                 "recommended": True,
             },
             {

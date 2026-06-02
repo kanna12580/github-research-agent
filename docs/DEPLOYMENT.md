@@ -49,7 +49,7 @@
 
 | 模型类型 | 模型名称 | 大小 | 下载方式 | 是否必需 |
 |----------|----------|------|----------|----------|
-| RAG 嵌入模型 | BAAI/bge-zh-qwen2-int8 | 400MB-1GB | 首次运行自动下载 | ✅ 必需 |
+| RAG 嵌入模型 | BAAI/bge-m3 | 400MB-1GB | 知识库包含文档时自动下载 | ✅ 必需 |
 | RAG 重排序模型 | BAAI/bge-reranker-v2-m3 | 300MB-500MB | 首次运行自动下载 | ⚠️ 可选 |
 | Playwright 浏览器 | Chromium | 150MB-200MB | `playwright install chromium` | ✅ 必需 |
 
@@ -72,7 +72,7 @@ cp .env.example .env
 LLM_PROVIDER=qwen                    # qwen | deepseek | openai
 LLM_MODEL=qwen3.5-flash              # 模型名称
 LLM_API_KEY=your-api-key-here        # API Key
-LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1  # API Base URL
+LLM_API_BASE=https://dashscope-intl.aliyuncs.com/compatible-mode/v1  # Singapore API Base URL
 
 # ===== 数据库配置 =====
 DATABASE_URL=postgresql://user:password@localhost:5432/deepintel
@@ -91,7 +91,7 @@ BROWSER_POOL_SIZE=3                  # 浏览器池大小
 BROWSER_NAVIGATION_TIMEOUT=30000     # 导航超时(ms)
 
 # ===== RAG 配置 =====
-RAG_EMBEDDING_MODEL=BAAI/bge-m3      # Embedding 模型
+RAG_EMBED_MODEL=BAAI/bge-m3          # Embedding 模型
 RAG_RERANKER_MODEL=BAAI/bge-reranker-v2-m3  # Reranker 模型
 RAG_TOP_K=15                         # 检索数量
 
@@ -462,7 +462,7 @@ playwright open https://example.com
 
 ```bash
 # 测试 API 连接
-curl -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
+curl -X POST https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions \
   -H "Authorization: Bearer $LLM_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model": "qwen3.5-flash", "messages": [{"role": "user", "content": "Hello"}]}'

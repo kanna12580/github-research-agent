@@ -70,7 +70,7 @@ class RedisSettings(BaseSettings):
 class RAGSettings(BaseSettings):
     """RAG system configuration."""
 
-    embed_model: str = Field(default="BAAI/bge-zh-qwen2-int8")
+    embed_model: str = Field(default="BAAI/bge-m3")
     embed_dimension: int = Field(default=1024)
     rerank_model: str = Field(default="BAAI/bge-reranker-v2-m3")
     rerank_device: Literal["cuda", "cpu"] = Field(default="cuda")
