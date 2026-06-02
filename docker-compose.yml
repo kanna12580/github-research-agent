@@ -37,6 +37,9 @@ services:
       - HTTP_PROXY=${DOCKER_HTTP_PROXY:-}
       - HTTPS_PROXY=${DOCKER_HTTPS_PROXY:-}
       - NO_PROXY=${DOCKER_NO_PROXY:-db,redis,localhost,127.0.0.1}
+      - http_proxy=${DOCKER_HTTP_PROXY:-}
+      - https_proxy=${DOCKER_HTTPS_PROXY:-}
+      - no_proxy=${DOCKER_NO_PROXY:-db,redis,localhost,127.0.0.1}
     depends_on:
       db:
         condition: service_healthy

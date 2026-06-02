@@ -128,8 +128,8 @@ http://localhost:5173
 docker compose exec -T api python -c "import os; print('LLM_API_BASE=' + str(os.getenv('LLM_API_BASE'))); print('MODEL=' + str(os.getenv('LLM_MODEL'))); print('KEY_SET=' + str(bool(os.getenv('LLM_API_KEY')))); print('HTTP_PROXY=' + str(os.getenv('HTTP_PROXY'))); print('HTTPS_PROXY=' + str(os.getenv('HTTPS_PROXY'))); print('NO_PROXY=' + str(os.getenv('NO_PROXY')))"
 ```
 
-如果 `HTTP_PROXY` 或 `HTTPS_PROXY` 为空，说明 `.env` 中的
-`DOCKER_HTTP_PROXY` / `DOCKER_HTTPS_PROXY` 没有传入容器。
+如果 `HTTP_PROXY`、`HTTPS_PROXY`、`http_proxy` 或 `https_proxy` 为空，
+说明 `.env` 中的 `DOCKER_HTTP_PROXY` / `DOCKER_HTTPS_PROXY` 没有传入容器。
 
 修改 `.env` 后需要重建或重启 API 容器：
 
@@ -226,7 +226,48 @@ openai.APIConnectionError: Connection error.
    - 新加坡 Base URL 应配新加坡地域可用的 Key。
    - 这种情况通常表现为认证错误，不太像 TLS EOF，但仍应确认。
 
-## 8. 运行测试
+## 8. 本项目当前确认到的现象
+
+2026-06-02 的对比测试结果：
+
+| 测试位置 | 目标 | 结果 |
+| --- | --- | --- |
+| API 容器，经 `host.docker.internal:7890` | `https://www.google.com/generate_204` | HTTP `204` |
+| API 容器，经 `host.docker.internal:7890` | `https://github.com/` | HTTP `200` |
+| API 容器，经 `host.docker.internal:7890` | `https://www.cloudflare.com/` | HTTP `200` |
+| API 容器，经 `host.docker.internal:7890` | `https://dashscope-intl.aliyuncs.com/...` | TLS EOF |
+| API 容器，经 `host.docker.internal:7890` | `https://dashscope.aliyuncs.com/...` | TLS EOF |
+
+这说明 Docker 容器到 FlClash 代理端口的连接是通的，项目的代理环境变量
+也已经传入。问题集中在 DashScope / Aliyun 域名的代理规则或代理出口上，
+而不是 FastAPI、OpenAI SDK 或 Docker Compose 的基础配置。
+
+请在 FlClash 中优先做以下调整：
+
+1. 临时切换到 `Global` / 全局代理模式。
+2. 选择一个可访问 DashScope 的节点，建议先用新加坡或香港节点。
+3. 在规则模式下，把以下规则放到靠前位置并指向代理策略组：
+
+```text
+DOMAIN,dashscope-intl.aliyuncs.com,PROXY
+DOMAIN,dashscope.aliyuncs.com,PROXY
+```
+
+如果 FlClash 不支持直接编辑规则，可以在 UI 中查找类似
+`覆写`、`规则覆写`、`Profiles`、`Parsers`、`自定义规则` 的入口。
+关键目标是让 FlClash 日志里访问 `dashscope-intl.aliyuncs.com` 时显示
+走代理节点，而不是 `DIRECT`。
+
+调整后重新运行：
+
+```powershell
+docker compose up -d --build api
+docker compose exec -T api python -c "import httpx; print(httpx.Client(proxy='http://host.docker.internal:7890', timeout=20).get('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models').status_code)"
+```
+
+未带认证时，如果返回 `401`，说明网络和 TLS 已经打通。
+
+## 9. 运行测试
 
 ```powershell
 docker compose run --rm --no-deps `
@@ -244,7 +285,7 @@ docker compose run --rm --no-deps `
 
 这个 warning 是 LangGraph 上游弃用提示，不影响当前复现。
 
-## 9. 提交一次研究任务
+## 10. 提交一次研究任务
 
 通过 API：
 
@@ -276,7 +317,7 @@ curl.exe -sN "http://localhost:5173/api/v1/research/stream/$($created.session_id
 Invoke-RestMethod "http://localhost:5173/api/v1/research/$($created.session_id)"
 ```
 
-## 10. 查看日志
+## 11. 查看日志
 
 ```powershell
 docker compose logs --tail 200 api
@@ -290,7 +331,7 @@ docker compose logs --tail 200 api
 - `knowledge base is empty; skipping embedding model initialization`：
   空知识库时已跳过本地 embedding 模型加载。
 
-## 11. 停止服务
+## 12. 停止服务
 
 停止容器但保留数据卷：
 

@@ -143,6 +143,10 @@ DashScope TLS 连通性问题影响。
   `SSL: UNEXPECTED_EOF_WHILE_READING`。容器内已经能看到正确的
   `LLM_API_BASE`、`HTTP_PROXY`、`HTTPS_PROXY` 和 `LLM_API_KEY`，因此目前
   记录为环境或代理出口问题，而不是应用配置错误。
+  后续对比测试显示，同一容器通过同一代理可以正常访问 Google、GitHub
+  和 Cloudflare，只有 DashScope / Aliyun 域名失败，因此更可能是
+  FlClash 规则把 Aliyun 域名直连，或当前代理节点出口无法完成 DashScope
+  TLS 握手。
 - 导入项目默认的 RAG embedding 模型 `BAAI/bge-zh-qwen2-int8` 无法解析到
   公开 HuggingFace 仓库。当前改用公开的 1024 维 `BAAI/bge-m3`，并在
   知识库为空时跳过本地模型加载。
