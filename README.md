@@ -152,6 +152,8 @@ deepintel/
 
 #### `docs/`
 
+- `LOCAL_STARTUP.md`：本地启动与 DashScope / Docker 代理排查指南
+- `REPRODUCTION.md`：DeepIntel 基线复现记录
 - `DEPLOYMENT.md`：部署说明
 - `MODEL_DOWNLOAD.md`：模型下载说明
 - `LLM_CONFIG_FRONTEND.md`：前端配置说明

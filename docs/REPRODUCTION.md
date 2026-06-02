@@ -1,43 +1,40 @@
-# DeepIntel Baseline Reproduction Notes
+# DeepIntel 基线复现记录
 
-## Scope
+## 范围
 
-This branch reproduces the public DeepIntel baseline before adapting it into a
-GitHub repository technical research agent.
+当前分支用于先复现公开的 DeepIntel 基线项目，再逐步改造成
+GitHub 开源项目技术调研 Agent。
 
-- Upstream repository: `https://github.com/wblxr408/DeepIntel`
-- Imported upstream commit: `815383e`
-- Working branch: `baseline/deepintel-import`
-- Local model target: `qwen3.5-flash` through the DashScope
-  OpenAI-compatible endpoint
+- 上游仓库：`https://github.com/wblxr408/DeepIntel`
+- 导入的上游提交：`815383e`
+- 当前工作分支：`baseline/deepintel-import`
+- 本地目标模型：通过 DashScope OpenAI 兼容接口调用 `qwen3.5-flash`
 
-## Environment
+## 环境
 
-The baseline is run through Docker Compose so that the backend uses the
-project-defined Python 3.11 image instead of relying on host Python packages.
+基线项目通过 Docker Compose 运行，后端使用项目定义的 Python 3.11
+镜像，不依赖宿主机 Python 包。
 
-Validated services on 2026-06-02:
+2026-06-02 已验证的服务：
 
-| Component | Verification |
+| 组件 | 验证结果 |
 | --- | --- |
-| PostgreSQL with pgvector | Container healthy; `pg_isready` accepted connections |
-| Redis | Container running; `redis-cli ping` returned `PONG` |
-| FastAPI backend | `GET /api/v1/health` returned `healthy` |
-| Readiness dependencies | `GET /api/v1/ready` returned `ready` |
-| React frontend build/proxy | Frontend container built; `/` returned HTTP 200 and `/api/v1/health` proxied successfully |
+| PostgreSQL + pgvector | 容器健康，`pg_isready` 可连接 |
+| Redis | 容器运行中，`redis-cli ping` 返回 `PONG` |
+| FastAPI 后端 | `GET /api/v1/health` 返回 `healthy` |
+| 依赖就绪检查 | `GET /api/v1/ready` 返回 `ready` |
+| React 前端构建与代理 | 前端容器构建成功，`/` 返回 HTTP 200，`/api/v1/health` 可代理到后端 |
 
-The local `.env` file maps the user's DashScope key to `LLM_API_KEY` and is
-gitignored. No key value is stored in source control.
+本地 `.env` 会把用户的 DashScope Key 映射到 `LLM_API_KEY`，该文件已被
+`.gitignore` 忽略。源码中不保存任何密钥值。
 
-For this environment, Qwen is configured through the Singapore
-OpenAI-compatible DashScope endpoint:
+当前环境使用 DashScope 新加坡地域的 OpenAI 兼容接口：
 
 ```env
 LLM_API_BASE=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 ```
 
-Docker containers can optionally use the host proxy through these gitignored
-local `.env` values:
+如果 Docker 容器需要通过宿主机代理访问外网，可在本地 `.env` 中配置：
 
 ```env
 DOCKER_HTTP_PROXY=http://host.docker.internal:7890
@@ -45,30 +42,28 @@ DOCKER_HTTPS_PROXY=http://host.docker.internal:7890
 DOCKER_NO_PROXY=db,redis,localhost,127.0.0.1
 ```
 
-## Baseline Fixes Required To Run
+## 为跑通基线所做的修复
 
-The following narrow fixes were required while reproducing the imported
-baseline:
+复现导入后的基线项目时，做了以下小范围修复：
 
-1. The default model configuration and UI option were aligned to
-   `qwen3.5-flash`.
-2. A reflection-triggered replan previously left completed tool nodes marked
-   `done`, which ended the graph before report generation. Replanning now
-   clears tool execution state and performs the next evidence pass.
-3. The browser graph node validated natural-language input as a URL before the
-   Browser Agent could resolve it. It now validates the resolved target and
-   extracts an embedded public URL such as a GitHub repository URL.
-4. SSE connections previously stayed open after `done` or `workflow_error`.
-   Terminal events now close the event stream.
-5. The imported default RAG embedding model did not resolve to a public
-   HuggingFace repository. The baseline now defaults to `BAAI/bge-m3`.
-6. The RAG agent now checks whether the knowledge base contains documents
-   before loading local embedding and reranking models. This keeps a clean
-   baseline run from blocking on unnecessary model downloads.
+1. 将默认模型配置和前端模型选项对齐到 `qwen3.5-flash`。
+2. 反思节点触发重新规划时，原逻辑会保留已完成工具节点的 `done`
+   状态，导致图流程提前结束而不生成报告；现在重新规划会清理工具
+   执行状态，并执行下一轮证据采集。
+3. Browser 图节点原先在 Browser Agent 解析前就把自然语言输入当作 URL
+   校验；现在改为校验解析后的目标，并能从输入中提取 GitHub 仓库等
+   公开 URL。
+4. SSE 连接在 `done` 或 `workflow_error` 后曾经不会主动关闭；现在终止
+   事件会关闭事件流。
+5. 导入项目默认的 RAG embedding 模型无法解析到公开 HuggingFace 仓库；
+   当前默认改为公开可用的 `BAAI/bge-m3`。
+6. RAG Agent 在加载本地 embedding 和 reranker 前，会先检查知识库是否
+   存在文档。知识库为空时直接跳过本地模型初始化，避免干净基线启动
+   被不必要的模型下载阻塞。
 
-## Verification Evidence
+## 验证记录
 
-Automated verification:
+自动化测试：
 
 ```powershell
 docker compose run --rm --no-deps `
@@ -77,10 +72,10 @@ docker compose run --rm --no-deps `
   api pytest -q tests/graph/test_graph.py tests/agents/test_agents.py tests/integration/test_workflow.py
 ```
 
-Result: `70 passed`, with one upstream LangGraph deprecation warning about
-importing `Send` from `langgraph.constants`.
+结果：`70 passed`，只有一个 LangGraph 上游弃用警告：
+`Send` 未来应从 `langgraph.types` 导入。
 
-Updated verification on 2026-06-02:
+2026-06-02 更新后的验证：
 
 ```powershell
 docker compose run --rm --no-deps `
@@ -90,9 +85,9 @@ docker compose run --rm --no-deps `
     tests/integration/test_workflow.py tests/rag/test_rag.py
 ```
 
-Result: `78 passed`, with the same upstream LangGraph deprecation warning.
+结果：`78 passed`，仍只有同一个 LangGraph 上游弃用警告。
 
-End-to-end verification task:
+端到端验证任务：
 
 ```text
 Analyze the LangGraph repository documentation at
@@ -100,73 +95,64 @@ https://github.com/langchain-ai/langgraph and summarize its core purpose with
 citations.
 ```
 
-Observed result:
+观察结果：
 
-| Check | Result |
+| 检查项 | 结果 |
 | --- | --- |
 | Session ID | `c90e88ed-9da6-4347-acbf-9846a1dc01b9` |
-| Final status | `completed` |
-| SSE events | Included `tool_complete`, `report_citation`, `report_chunk`, and `done` |
-| Generated report | 798 characters |
-| Stored citations | 1 unique GitHub-page citation |
+| 最终状态 | `completed` |
+| SSE 事件 | 包含 `tool_complete`、`report_citation`、`report_chunk`、`done` |
+| 生成报告 | 798 个字符 |
+| 持久化引用 | 1 条唯一 GitHub 页面引用 |
 
-Follow-up API verification on 2026-06-02 through the frontend proxy:
+2026-06-02 通过前端代理进行的 API 验证：
 
-| Check | Result |
+| 检查项 | 结果 |
 | --- | --- |
 | Session ID | `5dae28ad-3fa2-4d41-9471-9600ed406232` |
-| Final status | `completed` |
-| SSE events | Included `connected`, `workflow_start`, `state_update`, and `agent_start` |
-| Generated report | 2067 characters |
-| Stored citations | 8 persisted source citations |
+| 最终状态 | `completed` |
+| SSE 事件 | 包含 `connected`、`workflow_start`、`state_update`、`agent_start` |
+| 生成报告 | 2067 个字符 |
+| 持久化引用 | 8 条来源引用 |
 
-This run confirmed that the frontend proxy, backend API, SSE stream, report
-persistence, and citation persistence are wired together. Container logs showed
-the LLM calls still fell back because DashScope TLS negotiation failed through
-the current host proxy, so this is not counted as a real Qwen acceptance run.
+该验证确认：前端代理、后端 API、SSE 流、报告持久化和引用持久化已经串通。
+但容器日志显示 LLM 调用仍因 DashScope TLS 握手失败走了 fallback 路径，
+所以这一次不算真实 Qwen 验收。
 
-Visual frontend verification on 2026-06-02:
+2026-06-02 前端可视化验证：
 
-| Check | Result |
+| 检查项 | 结果 |
 | --- | --- |
-| Home page | Loaded at `http://localhost:5173`; system status showed online |
-| Research form | Opened through the `开始研究` action |
-| Task submission | Submitted a GitHub repository analysis query from the UI |
-| Agent trace | Displayed live RAG, search, browser, analyst, reflection, and report events |
-| Final UI state | Completed with 47 visible steps, 24 tool calls, and 6 displayed citations |
+| 首页 | `http://localhost:5173` 可打开，系统状态显示在线 |
+| 研究表单 | 点击 `开始研究` 后可打开 |
+| 任务提交 | 可从 UI 提交 GitHub 仓库分析查询 |
+| Agent 轨迹 | 可实时显示 RAG、搜索、浏览器、分析师、反思、报告事件 |
+| 最终 UI 状态 | 任务完成，页面显示 47 个步骤、24 次工具调用、6 条引用 |
 
-This confirms the frontend submission flow and visible SSE execution trace.
-The same DashScope TLS blocker applies to the LLM-backed quality of the report.
+该验证确认：前端提交流程和可见 SSE 执行轨迹可用。报告质量仍受当前
+DashScope TLS 连通性问题影响。
 
-## Current Limitations
+## 当前限制
 
-This is a runnable baseline with a working fallback report path, but it is not
-yet a full LLM-backed acceptance run:
+这是一个可运行的基线栈，fallback 报告路径可以工作，但还不是完整的
+真实 LLM 验收：
 
-- Calls from the API container to the official DashScope Beijing and Singapore
-  OpenAI-compatible endpoints currently fail during TLS negotiation before
-  authentication, both directly and through the host proxy
-  `host.docker.internal:7890`. The same container has the expected
-  `LLM_API_BASE`, `HTTP_PROXY`, `HTTPS_PROXY`, and `LLM_API_KEY` values, so
-  this is recorded as an environment/proxy blocker rather than an application
-  configuration bug.
-- The imported default RAG embedding model `BAAI/bge-zh-qwen2-int8` did not
-  resolve to a public HuggingFace repository. The baseline now uses the public
-  1024-dimensional `BAAI/bge-m3` model and skips model loading while the
-  knowledge base has no documents.
-- DuckDuckGo search returned intermittent HTTP `202`; the successful evidence
-  run used a directly accessible GitHub repository page through the Browser
-  Agent.
-- Replanning can collect the same page in more than one pass; report generation
-  now deduplicates evidence by source URL before storing citations.
-- Browser-plugin UI automation could not be completed in this Codex session
-  because the installed plugin directory did not contain its required
-  `scripts/browser-client.mjs` runtime file. Frontend build and HTTP/API proxy
-  checks succeeded independently.
+- API 容器访问 DashScope 北京和新加坡 OpenAI 兼容接口时，在认证前的
+  TLS 握手阶段失败。无论直连还是通过宿主机代理
+  `host.docker.internal:7890`，都出现
+  `SSL: UNEXPECTED_EOF_WHILE_READING`。容器内已经能看到正确的
+  `LLM_API_BASE`、`HTTP_PROXY`、`HTTPS_PROXY` 和 `LLM_API_KEY`，因此目前
+  记录为环境或代理出口问题，而不是应用配置错误。
+- 导入项目默认的 RAG embedding 模型 `BAAI/bge-zh-qwen2-int8` 无法解析到
+  公开 HuggingFace 仓库。当前改用公开的 1024 维 `BAAI/bge-m3`，并在
+  知识库为空时跳过本地模型加载。
+- DuckDuckGo 搜索偶发返回 HTTP `202`；成功的证据采集使用了 Browser
+  Agent 直接访问 GitHub 仓库页面。
+- 重新规划会在多轮采集中重复收集同一页面；报告生成阶段已按来源 URL
+  去重后再存储引用。
 
-## Baseline Status
+## 基线状态
 
-The application stack is runnable and the Agent/SSE/report persistence chain is
-demonstrated with public-source evidence. Automated tests pass, and the frontend
-submission flow has been visually exercised. Milestone 1 remains partially open
-only for a real `qwen3.5-flash` response from inside the API container.
+应用栈可运行，Agent / SSE / 报告持久化链路已经用公开来源证据验证。
+自动化测试通过，前端提交流程也已经可视化验证。Milestone 1 目前只剩
+API 容器内真实调用 `qwen3.5-flash` 这一项受本地网络或代理出口阻塞。
