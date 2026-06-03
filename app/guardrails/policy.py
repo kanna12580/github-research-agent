@@ -183,6 +183,15 @@ TOOL_SPECS: dict[str, ToolInvocationSpec] = {
             "additionalProperties": False,
         },
     ),
+    "github_repository_collect": ToolInvocationSpec(
+        tool_name="github_repository_collect",
+        args_schema={
+            "type": "object",
+            "properties": {"repository": {"type": "string", "minLength": 3}},
+            "required": ["repository"],
+            "additionalProperties": False,
+        },
+    ),
 }
 
 
@@ -213,6 +222,8 @@ def build_guardrail_decision(query: str, *, user_confirmed: bool = False) -> Gua
     }[intent]
 
     enabled_tools = ["search", "rag"]
+    if "github.com/" in text:
+        enabled_tools.append("github")
     if intent in (TaskIntent.SEARCH_COMPARE, TaskIntent.ANALYSIS, TaskIntent.DOC_ANSWER):
         enabled_tools.append("browser")
 

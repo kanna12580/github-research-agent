@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS citations (
     source_url TEXT,
     source_title TEXT,
     source_type VARCHAR(20) DEFAULT 'web'
-        CHECK (source_type IN ('web', 'document', 'knowledge_base')),
+        CHECK (source_type IN ('web', 'document', 'knowledge_base', 'github_repository')),
     extracted_evidence TEXT,
     relevance_score FLOAT DEFAULT 0,
     access_timestamp TIMESTAMP WITH TIME ZONE,
@@ -129,6 +129,10 @@ CREATE TABLE IF NOT EXISTS citations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_citations_session ON citations (session_id);
+
+ALTER TABLE citations DROP CONSTRAINT IF EXISTS citations_source_type_check;
+ALTER TABLE citations ADD CONSTRAINT citations_source_type_check
+    CHECK (source_type IN ('web', 'document', 'knowledge_base', 'github_repository'));
 
 -- ==============================================================
 -- Agent trace events table (for detailed analytics)

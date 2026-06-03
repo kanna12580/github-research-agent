@@ -16,7 +16,7 @@ building the GitHub-domain layer incrementally. Do not replace the core
 LangGraph/FastAPI/SSE/report flow until the new GitHub evidence path has its
 own tests and a minimal working API surface.
 
-Current phase: Milestone 2, GitHub Evidence Model.
+Current phase: Milestone 3, GitHub Research Workflow integration.
 
 ## Product Direction
 
@@ -61,8 +61,8 @@ capabilities:
 - report citations and reflection or verification steps
 
 Do not remove or heavily rewrite baseline components while implementing the
-GitHub evidence model. Prefer additive modules first, then integrate them into
-the existing workflow once they are independently tested.
+GitHub research workflow. Prefer additive modules first, then integrate them
+into the existing workflow once they are independently tested.
 
 ## Implementation Principles
 
@@ -115,12 +115,39 @@ Current implementation order:
 5. Expose a narrow API or workflow adapter only after the collector and scoring
    tests pass.
 
+Status: complete. The project now includes GitHub URL parsing, structured
+repository evidence schemas, public GitHub REST collection, deterministic
+scorecards, an analysis API, tests, and Chinese SDK usage documentation.
+
 ### Milestone 3: GitHub Research Workflow
 
 - Adapt planning for single-repository and multi-repository comparison tasks.
 - Implement scoring for reproducibility, depth, stack breadth, extensibility
   and engineering quality.
 - Adapt verification to ensure each important conclusion is evidence-backed.
+
+Current implementation order:
+
+1. Detect GitHub repository URLs in ordinary research prompts.
+2. Insert `github` collection nodes into the LangGraph DAG before search, RAG,
+   browser, analyst and report stages.
+3. Convert structured GitHub evidence bundles into standard report evidence
+   with provenance URLs.
+4. Preserve GitHub repositories, evidence bundles and scorecards in workflow
+   state for future comparison UI and verification work.
+5. Add single-repository workflow tests before adding multi-repository ranking.
+
+Current technical additions:
+
+- `github` tool node in the LangGraph workflow
+- deterministic GitHub scorecard evidence injected into the existing analyst
+  and report path
+- GitHub repository state fields: repositories, evidence bundles and scorecards
+- guardrail registration for read-only GitHub repository collection
+
+Do not build a new report pipeline yet. First make the existing research task
+entrypoint reliably produce a cited GitHub technical research report from one
+public repository URL.
 
 ### Milestone 4: Demonstration And Evaluation
 

@@ -15,6 +15,9 @@ class TestResearchState:
         assert state["status"] == "pending"
         assert state["revision_count"] == 0
         assert state["search_results"] == []
+        assert state["github_repositories"] == []
+        assert state["github_evidence"] == []
+        assert state["github_scorecards"] == []
 
     def test_research_state_has_required_keys(self):
         state = create_initial_state("query")
@@ -23,6 +26,7 @@ class TestResearchState:
             "dag", "current_executing_nodes", "completed_nodes",
             "tool_histories", "collected_evidence", "verification",
             "search_results", "browser_results", "rag_results", "aggregated_evidence",
+            "github_repositories", "github_evidence", "github_scorecards",
             "revision_needed", "revision_count", "analysis",
             "final_report", "citations", "guardrail_decision", "evidence_status",
             "review_status", "user_confirmed", "allow_web_after_rag_hit", "rag_group",
@@ -217,6 +221,132 @@ class TestGraphCompilation:
 
         assert rag_nodes
         assert search_nodes[0].depends_on == [rag_nodes[0].node_id]
+
+    def test_planner_inserts_github_collection_before_existing_nodes(self):
+        from unittest.mock import patch
+
+        from app.graph.compiler import planner_node
+        from app.graph.state import DAGDefinition, PlanNode, deserialize_dag
+
+        search_node_only = PlanNode(node_id="s1", node_type="search", query="test query")
+        dag = DAGDefinition(dag_name="test", nodes=[search_node_only], edges=[])
+        state = create_initial_state("Analyze https://github.com/acme/demo", "session-1")
+
+        with patch("app.agents.planner.PlannerAgent.create_dag", return_value=dag):
+            result = planner_node(state)
+
+        planned = deserialize_dag(result["dag"])
+        github_nodes = [node for node in planned.nodes if node.node_type == "github"]
+        search_nodes = [node for node in planned.nodes if node.node_type == "search"]
+
+        assert len(github_nodes) == 1
+        assert github_nodes[0].query == "https://github.com/acme/demo"
+        assert github_nodes[0].node_id in search_nodes[0].depends_on
+
+    def test_execute_tool_batch_can_route_github_nodes(self):
+        from app.graph.compiler import execute_tool_batch
+        from app.graph.state import DAGDefinition, PlanNode, serialize_dag
+
+        node = PlanNode(node_type="github", query="https://github.com/acme/demo")
+        state = create_initial_state("Analyze https://github.com/acme/demo", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+        state["current_executing_nodes"] = [node.node_id]
+        state["guardrail_decision"] = {"enabled_tools": ["github"]}
+
+        sends = execute_tool_batch(state)
+
+        assert len(sends) == 1
+        assert sends[0].node == "github"
+        assert sends[0].arg["executing_nodes"] == [node.node_id]
+
+    @pytest.mark.asyncio
+    async def test_github_node_collects_structured_evidence(self):
+        from datetime import datetime
+        from unittest.mock import patch
+
+        from app.github_research.models import (
+            DependencyManifestEvidence,
+            EvidenceSource,
+            GitHubEvidenceBundle,
+            GitHubRepositoryIdentity,
+            RepositoryFileTreeEvidence,
+            RepositoryMetadataEvidence,
+            RepositoryReadmeEvidence,
+        )
+        from app.github_research.scoring import score_repository
+        from app.graph.compiler import github_node
+        from app.graph.state import AgentType, DAGDefinition, PlanNode, serialize_dag
+
+        identity = GitHubRepositoryIdentity(
+            owner="acme",
+            repo="demo",
+            html_url="https://github.com/acme/demo",
+            api_url="https://api.github.com/repos/acme/demo",
+            default_branch="main",
+        )
+        source = EvidenceSource(source_type="github_api", source_url=identity.api_url)
+        bundle = GitHubEvidenceBundle(
+            identity=identity,
+            metadata=RepositoryMetadataEvidence(
+                identity=identity,
+                source=source,
+                description="Demo agent",
+                language="Python",
+                stars=100,
+                forks=12,
+                open_issues=3,
+                license_name="MIT",
+                updated_at=datetime.utcnow(),
+                pushed_at=datetime.utcnow(),
+                default_branch="main",
+            ),
+            readme=RepositoryReadmeEvidence(
+                source=EvidenceSource(
+                    source_type="github_raw",
+                    source_url="https://raw.githubusercontent.com/acme/demo/main/README.md",
+                ),
+                path="README.md",
+                text="# Demo\n\n## Installation\npip install demo\n\n## Usage\nRun it.",
+                has_install_section=True,
+                has_usage_section=True,
+            ),
+            file_tree=RepositoryFileTreeEvidence(
+                source=EvidenceSource(source_type="github_api", source_url=f"{identity.api_url}/git/trees/main?recursive=1"),
+                default_branch="main",
+                files_sampled=5,
+                directories=["app", "tests"],
+                key_files=["README.md", "requirements.txt", "tests/test_app.py"],
+                has_tests=True,
+                has_license_file=True,
+            ),
+            dependencies=DependencyManifestEvidence(
+                source=EvidenceSource(source_type="github_api", source_url=f"{identity.api_url}/git/trees/main?recursive=1"),
+                manifests=["requirements.txt"],
+                package_managers=["pip"],
+                languages=["Python"],
+                frameworks=["Python"],
+            ),
+        )
+        bundle.scorecard = score_repository(bundle)
+
+        class FakeCollector:
+            async def collect(self, repository):
+                assert repository == "https://github.com/acme/demo"
+                return bundle
+
+        node = PlanNode(node_type="github", query="https://github.com/acme/demo")
+        state = create_initial_state("Analyze https://github.com/acme/demo", "session-1")
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[node], edges=[]))
+        state["executing_nodes"] = [node.node_id]
+
+        with patch("app.graph.compiler.GitHubRepositoryCollector", return_value=FakeCollector()):
+            result = await github_node(state)
+
+        assert result["github_repositories"][0]["owner"] == "acme"
+        assert result["github_scorecards"][0]["full_name"] == "acme/demo"
+        assert len(result["collected_evidence"]) >= 4
+        assert result["collected_evidence"][0]["source_type"] == "github_repository"
+        assert result["tool_histories"][0]["agent_type"] == AgentType.GITHUB.value
 
     def test_dag_aggregator_skips_web_after_rag_hit_by_default(self):
         from app.graph.compiler import dag_results_aggregator

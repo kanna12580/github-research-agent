@@ -1,6 +1,6 @@
 import pytest
 
-from app.github_research.url_parser import parse_github_repository_url
+from app.github_research.url_parser import extract_github_repository_urls, parse_github_repository_url
 
 
 @pytest.mark.parametrize(
@@ -35,3 +35,16 @@ def test_parse_github_repository_url(value, owner, repo):
 def test_parse_github_repository_url_rejects_non_repo_values(value):
     with pytest.raises(ValueError):
         parse_github_repository_url(value)
+
+
+def test_extract_github_repository_urls_from_free_form_text():
+    identities = extract_github_repository_urls(
+        "Compare https://github.com/langchain-ai/langgraph and "
+        "https://github.com/openai/openai-python/tree/main. "
+        "Duplicate: https://github.com/langchain-ai/langgraph"
+    )
+
+    assert [identity.full_name for identity in identities] == [
+        "langchain-ai/langgraph",
+        "openai/openai-python",
+    ]

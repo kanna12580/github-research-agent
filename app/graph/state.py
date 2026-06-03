@@ -64,6 +64,7 @@ class AgentType(str, Enum):
     SEARCH = "search"          # 搜索工具使用者
     BROWSER = "browser"       # 浏览器工具使用者
     RAG = "rag"              # 检索工具使用者
+    GITHUB = "github"          # GitHub 仓库证据采集工具
     ANALYST = "analyst"       # 分析工具使用者（内部推理）
     REFLECTION = "reflection"  # 自校验器（主题 5）
     REPORT = "report"        # 报告生成器
@@ -118,7 +119,7 @@ class PlanNode(BaseModel):
     """
     node_id: str = Field(default_factory=lambda: f"n{uuid.uuid4().hex[:6]}")
     # 节点类型：对应工具驱动中的 Agent 类型
-    node_type: Literal["search", "browser", "rag", "analyst", "reflection", "report"] | None = None
+    node_type: Literal["search", "browser", "rag", "github", "analyst", "reflection", "report"] | None = None
     # 该节点要执行的具体查询
     query: str = ""
     # 依赖的前置节点（只有在这些节点完成后才能执行）
@@ -385,7 +386,7 @@ class Citation(BaseModel):
     text: str = ""
     source_url: str | None = None
     source_title: str | None = None
-    source_type: Literal["web", "document", "knowledge_base"] = "web"
+    source_type: Literal["web", "document", "knowledge_base", "github_repository"] = "web"
     # 附加元数据（兼容各 Agent 的字段）
     extracted_evidence: str | None = None
     relevance_score: float = 0.0
@@ -519,7 +520,7 @@ class Evidence(BaseModel):
     content: str
     source_url: str | None = None
     source_title: str | None = None
-    source_type: Literal["web", "document", "knowledge_base"] = "web"
+    source_type: Literal["web", "document", "knowledge_base", "github_repository"] = "web"
     # 来源 Agent
     collected_by: AgentType
     collected_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
@@ -571,6 +572,9 @@ class ResearchState(TypedDict):
     browser_results: list[dict]
     rag_results: list[dict]
     aggregated_evidence: list[dict]
+    github_repositories: list[dict]
+    github_evidence: list[dict]
+    github_scorecards: list[dict]
 
     # ===== 主题 5: 校验 =====
     verification: dict | None       # VerificationResult
@@ -623,6 +627,9 @@ class ResearchState(TypedDict):
     browser_results: Annotated[list[dict], merge_lists] = []
     rag_results: Annotated[list[dict], merge_lists] = []
     aggregated_evidence: Annotated[list[dict], merge_lists] = []
+    github_repositories: Annotated[list[dict], merge_lists] = []
+    github_evidence: Annotated[list[dict], merge_lists] = []
+    github_scorecards: Annotated[list[dict], merge_lists] = []
 
     # ===== 主题 5: 校验 =====
     verification: dict | None       # VerificationResult
@@ -686,6 +693,9 @@ def create_initial_state(
         browser_results=[],
         rag_results=[],
         aggregated_evidence=[],
+        github_repositories=[],
+        github_evidence=[],
+        github_scorecards=[],
 
         verification=None,
         revision_needed=False,

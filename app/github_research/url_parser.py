@@ -9,6 +9,10 @@ from app.github_research.models import GitHubRepositoryIdentity
 
 
 _OWNER_REPO_RE = re.compile(r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+_GITHUB_URL_RE = re.compile(
+    r"https?://(?:www\.)?github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?",
+    re.IGNORECASE,
+)
 
 
 def parse_github_repository_url(value: str) -> GitHubRepositoryIdentity:
@@ -42,3 +46,20 @@ def parse_github_repository_url(value: str) -> GitHubRepositoryIdentity:
     html_url = f"https://github.com/{owner}/{repo}"
     api_url = f"https://api.github.com/repos/{owner}/{repo}"
     return GitHubRepositoryIdentity(owner=owner, repo=repo, html_url=html_url, api_url=api_url)
+
+
+def extract_github_repository_urls(text: str) -> list[GitHubRepositoryIdentity]:
+    """Extract unique public GitHub repository identities from free-form text."""
+    identities: list[GitHubRepositoryIdentity] = []
+    seen: set[str] = set()
+    for match in _GITHUB_URL_RE.finditer(text or ""):
+        try:
+            identity = parse_github_repository_url(match.group(0))
+        except ValueError:
+            continue
+        key = identity.full_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        identities.append(identity)
+    return identities

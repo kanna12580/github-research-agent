@@ -68,8 +68,11 @@ from app.guardrails import (
     is_tool_allowed,
     record_guardrail_event,
 )
+from app.github_research.collector import GitHubRepositoryCollector
+from app.github_research.models import GitHubEvidenceBundle, RepositoryScorecard
+from app.github_research.url_parser import extract_github_repository_urls
 
-TOOL_NODE_TYPES = {"search", "browser", "rag"}
+TOOL_NODE_TYPES = {"search", "browser", "rag", "github"}
 WEB_NODE_TYPES = {"search", "browser"}
 
 
@@ -104,6 +107,51 @@ def _enforce_internal_first_dag(dag: DAGDefinition, user_query: str) -> DAGDefin
                 dag.edges.append(PlanEdge(from_node=rag_id, to_node=node.node_id, edge_type="sequential"))
                 existing_edges.add((rag_id, node.node_id))
 
+    return dag
+
+
+def _ensure_github_repository_collection(dag: DAGDefinition, user_query: str) -> DAGDefinition:
+    """Insert GitHub repository collection nodes when the user query contains repo URLs."""
+    repositories = extract_github_repository_urls(user_query)
+    if not repositories:
+        return dag
+
+    existing_repo_urls = {
+        node.query.rstrip("/")
+        for node in dag.nodes
+        if node.node_type == "github"
+    }
+    github_nodes: list[PlanNode] = []
+    for index, identity in enumerate(repositories, start=1):
+        if identity.html_url.rstrip("/") in existing_repo_urls:
+            continue
+        node = PlanNode(
+            node_id=f"github_repo_{index}",
+            node_type="github",
+            query=identity.html_url,
+            depends_on=[],
+            parallel=True,
+            description=f"Collect structured GitHub evidence for {identity.full_name}",
+        )
+        github_nodes.append(node)
+
+    if not github_nodes:
+        return dag
+
+    dag.nodes = [*github_nodes, *dag.nodes]
+    existing_edges = {(edge.from_node, edge.to_node) for edge in dag.edges}
+    github_ids = [node.node_id for node in github_nodes]
+    for node in dag.nodes:
+        if node.node_id in github_ids:
+            continue
+        for github_id in github_ids:
+            if github_id in node.depends_on:
+                continue
+            node.depends_on.append(github_id)
+            edge_key = (github_id, node.node_id)
+            if edge_key not in existing_edges:
+                dag.edges.append(PlanEdge(from_node=github_id, to_node=node.node_id, edge_type="sequential"))
+                existing_edges.add(edge_key)
     return dag
 
 
@@ -293,6 +341,7 @@ def planner_node(state: ResearchState) -> dict:
     agent = PlannerAgent()
     dag: DAGDefinition = agent.create_dag(state["user_query"])
     dag = _enforce_internal_first_dag(dag, state["user_query"])
+    dag = _ensure_github_repository_collection(dag, state["user_query"])
     decision = build_guardrail_decision(state["user_query"], user_confirmed=state.get("user_confirmed", False))
     record_guardrail_event(
         state,
@@ -841,6 +890,224 @@ def rag_node(state: ResearchState) -> dict:
     }
 
 
+def _scorecard_summary(scorecard: RepositoryScorecard | None) -> str:
+    if not scorecard:
+        return "No scorecard was generated."
+    lines = [
+        f"Repository scorecard for {scorecard.full_name}: average={scorecard.average_score}/10, total={scorecard.total_score}.",
+    ]
+    for dimension in scorecard.dimensions:
+        refs = ", ".join(dimension.evidence_refs[:3]) or "no refs"
+        lines.append(f"- {dimension.name}: {dimension.score}/10. {dimension.rationale} Evidence: {refs}")
+    return "\n".join(lines)
+
+
+def _github_bundle_to_evidence(bundle: GitHubEvidenceBundle) -> list["Evidence"]:
+    from app.graph.state import Evidence
+
+    metadata = bundle.metadata
+    readme = bundle.readme
+    file_tree = bundle.file_tree
+    dependencies = bundle.dependencies
+    evidence: list[Evidence] = [
+        Evidence(
+            content=(
+                f"GitHub repository metadata for {bundle.identity.full_name}: "
+                f"description={metadata.description or 'N/A'}, language={metadata.language or 'N/A'}, "
+                f"stars={metadata.stars}, forks={metadata.forks}, open_issues={metadata.open_issues}, "
+                f"license={metadata.license_name or 'N/A'}, archived={metadata.archived}, "
+                f"default_branch={metadata.default_branch or 'N/A'}, updated_at={metadata.updated_at}, "
+                f"pushed_at={metadata.pushed_at}."
+            ),
+            source_url=metadata.source.source_url,
+            source_title=f"{bundle.identity.full_name} repository metadata",
+            source_type="github_repository",
+            collected_by=AgentType.GITHUB,
+            reliability=0.95,
+        ),
+        Evidence(
+            content=_scorecard_summary(bundle.scorecard),
+            source_url=bundle.identity.html_url,
+            source_title=f"{bundle.identity.full_name} deterministic scorecard",
+            source_type="github_repository",
+            collected_by=AgentType.GITHUB,
+            reliability=0.9,
+        ),
+    ]
+
+    if readme:
+        readme_excerpt = readme.text[:2500]
+        evidence.append(Evidence(
+            content=(
+                f"README evidence for {bundle.identity.full_name}: "
+                f"install_section={readme.has_install_section}, usage_section={readme.has_usage_section}, "
+                f"quickstart_section={readme.has_quickstart_section}, docker_reference={readme.has_docker_reference}, "
+                f"env_reference={readme.has_env_reference}.\n\nREADME excerpt:\n{readme_excerpt}"
+            ),
+            source_url=readme.source.source_url,
+            source_title=f"{bundle.identity.full_name} README",
+            source_type="github_repository",
+            collected_by=AgentType.GITHUB,
+            reliability=0.9,
+            tokens_estimate=len(readme_excerpt) // 4,
+        ))
+
+    if file_tree:
+        evidence.append(Evidence(
+            content=(
+                f"Repository file tree signals for {bundle.identity.full_name}: "
+                f"files_sampled={file_tree.files_sampled}, directories={file_tree.directories[:30]}, "
+                f"key_files={file_tree.key_files[:40]}, has_tests={file_tree.has_tests}, "
+                f"has_ci={file_tree.has_ci}, has_docker={file_tree.has_docker}, "
+                f"has_docs={file_tree.has_docs}, has_examples={file_tree.has_examples}, "
+                f"has_license_file={file_tree.has_license_file}, has_contributing={file_tree.has_contributing}."
+            ),
+            source_url=file_tree.source.source_url,
+            source_title=f"{bundle.identity.full_name} file tree",
+            source_type="github_repository",
+            collected_by=AgentType.GITHUB,
+            reliability=0.92,
+        ))
+
+    if dependencies:
+        evidence.append(Evidence(
+            content=(
+                f"Dependency and stack signals for {bundle.identity.full_name}: "
+                f"manifests={dependencies.manifests}, languages={dependencies.languages}, "
+                f"package_managers={dependencies.package_managers}, frameworks={dependencies.frameworks}, "
+                f"has_lockfile={dependencies.has_lockfile}."
+            ),
+            source_url=dependencies.source.source_url,
+            source_title=f"{bundle.identity.full_name} dependency manifests",
+            source_type="github_repository",
+            collected_by=AgentType.GITHUB,
+            reliability=0.9,
+        ))
+
+    return evidence
+
+
+async def github_node(state: ResearchState) -> dict:
+    """Collect structured GitHub repository evidence for DAG github nodes."""
+    from app.graph.state import AgentEvent
+    from app.observability.trace import EventType
+    from app.guardrails import record_guardrail_event, validate_tool_invocation
+
+    dag = deserialize_dag(state["dag"])
+    executing_nodes = state.get("executing_nodes", state.get("current_executing_nodes", []))
+    github_nodes = [
+        n for n in dag.nodes
+        if n.node_id in executing_nodes and n.node_type == "github"
+    ]
+
+    if not github_nodes:
+        return {
+            "github_repositories": [],
+            "github_evidence": [],
+            "github_scorecards": [],
+            "collected_evidence": [],
+            "tool_histories": [],
+            "agent_trace": [],
+        }
+
+    trace = [
+        _append_trace_event(state, EventType.AGENT_START, "github", f"Collecting {len(github_nodes)} GitHub repositories")
+    ]
+    collector = GitHubRepositoryCollector()
+    bundles: list[GitHubEvidenceBundle] = []
+    evidence_items = []
+    tool_histories = []
+
+    for node in github_nodes:
+        trace.append(_append_trace_event(
+            state,
+            EventType.TOOL_START,
+            "github",
+            f"Collecting repository evidence: {node.query}",
+            {"tool_name": "github_repository_collect", "args": {"repository": node.query}},
+        ))
+        tool_history = _make_tool_history(
+            agent_type=AgentType.GITHUB,
+            tool_name="github_repository_collect",
+            task_id=state.get("task_id"),
+            query=node.query,
+        )
+        valid, reason = validate_tool_invocation("github_repository_collect", {"repository": node.query})
+        if not valid:
+            _finish_tool_history(tool_history, status="error", error=reason or "invalid_args")
+            record_guardrail_event(
+                state,
+                agent="github",
+                event_type="tool_blocked",
+                content=reason or "invalid_args",
+                metadata={"tool": "github_repository_collect", "repository": node.query},
+            )
+            tool_histories.append(tool_history)
+            continue
+
+        node.status = StepStatus.RUNNING
+        try:
+            bundle = await collector.collect(node.query)
+            bundles.append(bundle)
+            repo_evidence = _github_bundle_to_evidence(bundle)
+            evidence_items.extend(repo_evidence)
+            node.result = {
+                "repository": bundle.identity.model_dump(mode="json"),
+                "scorecard": bundle.scorecard.model_dump(mode="json") if bundle.scorecard else None,
+                "evidence_count": len(repo_evidence),
+            }
+            node.confidence = 0.92
+            _finish_tool_history(
+                tool_history,
+                status="success",
+                result_summary=f"{bundle.identity.full_name}: {len(repo_evidence)} evidence items",
+            )
+            trace.append(_append_trace_event(
+                state,
+                EventType.TOOL_COMPLETE,
+                "github",
+                f"Collected GitHub evidence for {bundle.identity.full_name}: {len(repo_evidence)} evidence items",
+                {
+                    "tool_name": "github_repository_collect",
+                    "status": "success",
+                    "repository": bundle.identity.full_name,
+                    "evidence_count": len(repo_evidence),
+                },
+            ))
+        except Exception as e:
+            node.status = StepStatus.FAILED
+            node.retry_count += 1
+            _finish_tool_history(tool_history, status="error", error=str(e))
+            trace.append(_append_trace_event(
+                state,
+                EventType.TOOL_ERROR,
+                "github",
+                f"GitHub evidence collection failed for {node.query}: {str(e)}",
+                {"tool_name": "github_repository_collect", "status": "error", "error": str(e)},
+            ))
+        tool_histories.append(tool_history)
+
+    trace.append(AgentEvent(
+        agent="github",
+        event_type="agent_complete",
+        content=f"Collected {len(evidence_items)} evidence items from {len(bundles)} GitHub repositories",
+    ).model_dump())
+
+    return {
+        "github_repositories": [bundle.identity.model_dump(mode="json") for bundle in bundles],
+        "github_evidence": [bundle.model_dump(mode="json") for bundle in bundles],
+        "github_scorecards": [
+            bundle.scorecard.model_dump(mode="json")
+            for bundle in bundles
+            if bundle.scorecard is not None
+        ],
+        "collected_evidence": [item.model_dump() for item in evidence_items],
+        "aggregated_evidence": [item.model_dump() for item in evidence_items],
+        "tool_histories": tool_histories,
+        "agent_trace": trace,
+    }
+
+
 # ==============================================================
 # 主题 1 & 3: 批量执行 - Fan-out / Fan-in
 # ==============================================================
@@ -862,7 +1129,7 @@ def execute_tool_batch(state: ResearchState) -> list[Send]:
 
     dag = deserialize_dag(state["dag"])
     decision = state.get("guardrail_decision") or {}
-    enabled_tools = set(decision.get("enabled_tools", ["search", "browser", "rag"]))
+    enabled_tools = set(decision.get("enabled_tools", ["search", "browser", "rag", "github"]))
     sends = []
 
     # 子节点在 LangGraph 中接收到的是 Send payload，不一定包含完整 state。
@@ -884,7 +1151,7 @@ def execute_tool_batch(state: ResearchState) -> list[Send]:
             continue
 
         # 根据节点类型分发
-        if node.node_type in ("search", "browser", "rag") and node.node_type in enabled_tools:
+        if node.node_type in ("search", "browser", "rag", "github") and node.node_type in enabled_tools:
             sends.append(Send(node.node_type, {
                 **node_payload,
                 "executing_nodes": [node_id],
@@ -1249,6 +1516,7 @@ def compile_research_graph() -> StateGraph:
     builder.add_node("search", search_node)
     builder.add_node("browser", browser_node)
     builder.add_node("rag", rag_node)
+    builder.add_node("github", github_node)
 
     # === 边定义 ===
     # 入口
@@ -1261,13 +1529,14 @@ def compile_research_graph() -> StateGraph:
     builder.add_conditional_edges(
         "dag_executor",
         execute_tool_batch,
-        ["search", "browser", "rag"],
+        ["search", "browser", "rag", "github"],
     )
 
     # 工具节点 → 结果聚合
     builder.add_edge("search", "dag_aggregator")
     builder.add_edge("browser", "dag_aggregator")
     builder.add_edge("rag", "dag_aggregator")
+    builder.add_edge("github", "dag_aggregator")
 
     # 结果聚合 → 判断是否继续 DAG 或进入分析
     builder.add_conditional_edges(
