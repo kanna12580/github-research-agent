@@ -50,12 +50,20 @@ DOCKER_HTTPS_PROXY=http://host.docker.internal:7890
 DOCKER_NO_PROXY=db,redis,localhost,127.0.0.1
 ```
 
+如果要使用 GitHub Repository Evidence API，建议配置一个 GitHub Personal
+Access Token 以提升公共 API 额度：
+
+```env
+GITHUB_TOKEN=你的 GitHub Token
+```
+
 注意：
 
 - `.env` 不要提交到 Git。
 - 本项目通过 OpenAI SDK 调用 DashScope，因此使用 `/compatible-mode/v1`
   这类 OpenAI 兼容地址，不使用 DashScope 原生
   `/api/v1/services/aigc/...` 地址。
+- `GITHUB_TOKEN` 只用于 GitHub REST API 采集公开仓库 evidence，不要提交。
 
 ### 2.2 启动服务
 
@@ -420,7 +428,62 @@ POST /api/v1/config/llm
 注意：这个接口会把配置保存到数据库，并覆盖环境变量配置。不要把真实 Key
 写入文档、提交记录或截图。
 
-## 10. 本次真实端到端验收记录
+## 10. GitHub Repository Evidence API
+
+这个 API 是 GitHub 技术调研 Agent 的第一层能力：输入一个 GitHub 仓库
+URL，返回结构化 evidence 和 deterministic scorecard。
+
+Endpoint：
+
+```http
+POST /api/v1/github/repositories/analyze
+```
+
+请求体：
+
+```json
+{
+  "repository_url": "https://github.com/langchain-ai/langgraph"
+}
+```
+
+PowerShell：
+
+```powershell
+$body = @{
+  repository_url = "https://github.com/langchain-ai/langgraph"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Method Post `
+  -ContentType "application/json" `
+  -Uri "http://localhost:5173/api/v1/github/repositories/analyze" `
+  -Body $body
+```
+
+返回内容包括：
+
+- `identity`：规范化后的 `owner/repo`
+- `metadata`：stars、forks、license、topics、默认分支等
+- `readme`：README 内容和安装/使用/Docker/.env 信号
+- `file_tree`：测试、CI、Docker、docs、examples、license 等文件树信号
+- `dependencies`：依赖清单、包管理器、语言和框架信号
+- `scorecard`：可复现性、项目深度、技术栈广度、可扩展性、工程质量、风险控制评分
+
+如果返回 HTTP `403`：
+
+```text
+GitHub API rate limit or permission error.
+```
+
+通常是当前出口 IP 的 GitHub 匿名 API 额度不足。请在 `.env` 中配置
+`GITHUB_TOKEN`，然后重建 API 容器：
+
+```powershell
+docker compose up -d --build api
+```
+
+## 11. 本次真实端到端验收记录
 
 验收时间：2026-06-03
 
@@ -448,14 +511,14 @@ using source citations.
 | 引用数量 | 15 条 |
 | 网络状态 | DashScope TLS 正常，OpenAI SDK 调用成功 |
 
-## 11. 常见问题
+## 12. 常见问题
 
-### 11.1 curl 返回 401 是否失败？
+### 12.1 curl 返回 401 是否失败？
 
 不是。未带 Authorization Header 时返回 `401`，说明网络、代理、TLS 已经
 打通。真实 SDK 调用会带 `LLM_API_KEY`。
 
-### 11.2 仍然出现 TLS EOF 怎么办？
+### 12.2 仍然出现 TLS EOF 怎么办？
 
 优先确认 FlClash 当前节点是否可访问 DashScope：
 
@@ -466,7 +529,7 @@ docker compose exec -T api sh -lc "curl -v --proxy http://host.docker.internal:7
 如果 CONNECT 成功但 TLS EOF，通常是当前节点出口对 DashScope 不可用。
 切换 FlClash 节点后重试。
 
-### 11.3 SSE queue full 是否影响最终结果？
+### 12.3 SSE queue full 是否影响最终结果？
 
 如果客户端长时间不读取 SSE，后端可能打印：
 
@@ -476,7 +539,7 @@ SSE queue full ... dropping event
 
 这表示部分实时事件被丢弃，不代表任务失败。最终报告和引用仍会写入数据库。
 
-### 11.4 为什么报告里出现英文？
+### 12.4 为什么报告里出现英文？
 
 当前 baseline 的报告 Agent prompt 更偏英文技术报告风格。后续改造成
 GitHub 技术调研 Agent 时，可以把报告模板改为中文、结构化评分和证据表。

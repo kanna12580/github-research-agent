@@ -11,9 +11,12 @@ The development path has two explicit phases:
 1. Reproduce and validate the original DeepIntel end-to-end workflow.
 2. Refactor and extend the system for GitHub repository analysis and comparison.
 
-Do not skip the reproduction phase by prematurely replacing core workflow
-components. Record fixes required to make the baseline runnable before beginning
-the domain-specific redesign.
+The reproduction phase is complete. Keep the runnable baseline intact while
+building the GitHub-domain layer incrementally. Do not replace the core
+LangGraph/FastAPI/SSE/report flow until the new GitHub evidence path has its
+own tests and a minimal working API surface.
+
+Current phase: Milestone 2, GitHub Evidence Model.
 
 ## Product Direction
 
@@ -26,17 +29,27 @@ generates an evidence-backed technical selection report. It should evaluate:
 - extensibility
 - engineering quality and project risks
 
-The intended workflow is:
+The target workflow is:
 
-`Repository Input -> Planning -> Evidence Collection -> Analysis -> Verification -> Report`
+`Repository Input -> GitHub Evidence Collection -> Scoring -> Verification -> Report`
 
-Evidence collection should eventually include repository metadata, README and
-documentation, dependency manifests, directory structure, tests, CI and
-container configuration.
+Evidence collection should include repository metadata, README and
+documentation, dependency manifests, directory structure, tests, CI,
+container configuration, license, release signals and activity signals.
 
-## Baseline Architecture To Preserve Initially
+Important scoring dimensions:
 
-During reproduction, retain the original architectural responsibilities:
+- reproducibility and setup quality
+- architecture and Agent workflow depth
+- technology stack breadth
+- extensibility
+- engineering quality
+- maintenance activity and project risks
+
+## Baseline Architecture To Preserve
+
+Retain the original architectural responsibilities while adding GitHub-domain
+capabilities:
 
 - LangGraph for workflow orchestration
 - FastAPI for backend APIs
@@ -47,8 +60,9 @@ During reproduction, retain the original architectural responsibilities:
 - browser or search tools used by the existing workflow
 - report citations and reflection or verification steps
 
-Only simplify a baseline component when it blocks execution and the reason is
-documented.
+Do not remove or heavily rewrite baseline components while implementing the
+GitHub evidence model. Prefer additive modules first, then integrate them into
+the existing workflow once they are independently tested.
 
 ## Implementation Principles
 
@@ -63,6 +77,12 @@ documented.
 - Maintain a runnable baseline before starting broad feature changes.
 - Add tests for routing, evidence extraction, scoring logic, API contracts, and
   report verification as those features are introduced.
+- Keep GitHub evidence structured before it is turned into prose.
+- Prefer deterministic collectors and scoring heuristics for facts that can be
+  computed from repository files or metadata. Use LLMs for synthesis after the
+  evidence object exists.
+- Treat GitHub API tokens as optional. Public repository collection must work
+  without a token when rate limits allow it.
 
 ## Planned Milestones
 
@@ -74,11 +94,26 @@ documented.
 - Run automated tests and capture any required fixes.
 - Produce one successful end-to-end research report with observable Agent trace.
 
+Status: complete. The baseline runs through Docker Compose, uses
+`qwen3.5-flash` through DashScope OpenAI-compatible API, exposes frontend SSE
+progress, and has produced a real cited end-to-end report.
+
 ### Milestone 2: Evidence Model
 
 - Define structured GitHub repository evidence schemas.
 - Add repository metadata, file tree, README and dependency collectors.
 - Store evidence and references independently from final prose reports.
+
+Current implementation order:
+
+1. Parse and normalize public GitHub repository URLs.
+2. Define Pydantic evidence schemas for repository identity, metadata, files,
+   dependency manifests, CI/container signals and documentation signals.
+3. Add a public GitHub collector that works through GitHub REST/raw endpoints.
+4. Add deterministic scoring inputs for reproducibility, depth, stack breadth,
+   extensibility, engineering quality and risk.
+5. Expose a narrow API or workflow adapter only after the collector and scoring
+   tests pass.
 
 ### Milestone 3: GitHub Research Workflow
 
@@ -112,3 +147,15 @@ The reproduction phase is complete only when:
 - Agent execution updates are visible through SSE or the UI
 - a report with source citations is successfully generated
 - test/build status and any remaining limitations are documented
+
+Status: complete.
+
+## Completion Criteria For The GitHub Evidence Model
+
+Milestone 2 is complete when:
+
+- one public GitHub URL can be parsed into stable `owner/repo` identity
+- metadata, README, file tree and key manifest signals can be collected
+- evidence objects retain provenance URLs for every important conclusion
+- deterministic scores are generated from structured evidence
+- tests cover URL parsing, evidence extraction and scoring edge cases

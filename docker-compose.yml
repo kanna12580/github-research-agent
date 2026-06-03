@@ -34,6 +34,7 @@ services:
       - API_PORT=8000
       - API_RELOAD=false
       - API_LOG_LEVEL=${API_LOG_LEVEL:-INFO}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - HTTP_PROXY=${DOCKER_HTTP_PROXY:-}
       - HTTPS_PROXY=${DOCKER_HTTPS_PROXY:-}
       - NO_PROXY=${DOCKER_NO_PROXY:-db,redis,localhost,127.0.0.1}
