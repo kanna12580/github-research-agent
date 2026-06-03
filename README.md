@@ -153,6 +153,7 @@ deepintel/
 #### `docs/`
 
 - `LOCAL_STARTUP.md`：本地启动与 DashScope / Docker 代理排查指南
+- `SDK_USAGE.md`：本地启动、Research API 与 SDK 调用示例
 - `REPRODUCTION.md`：DeepIntel 基线复现记录
 - `DEPLOYMENT.md`：部署说明
 - `MODEL_DOWNLOAD.md`：模型下载说明

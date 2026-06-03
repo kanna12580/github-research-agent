@@ -132,21 +132,28 @@ citations.
 该验证确认：前端提交流程和可见 SSE 执行轨迹可用。报告质量仍受当前
 DashScope TLS 连通性问题影响。
 
+2026-06-03 真实 Qwen 端到端验证：
+
+| 检查项 | 结果 |
+| --- | --- |
+| DashScope TLS | 容器经 `host.docker.internal:7890` 访问新加坡 endpoint，未带 Key 时返回 HTTP `401` |
+| OpenAI SDK 最小调用 | 容器内 `qwen3.5-flash` 返回 `OK` |
+| Session ID | `c36ba8f7-c5ec-4844-9242-603ac2e4c5ec` |
+| 最终状态 | `completed` |
+| 生成报告 | 4548 个字符 |
+| 持久化引用 | 15 条来源引用 |
+| LLM 连接错误 | 最近任务窗口未出现新的 `Connection error` |
+
+该验证确认：DashScope / Qwen 真实调用链路已经恢复，Agent 工作流可生成
+带引用的真实端到端报告。
+
 ## 当前限制
 
-这是一个可运行的基线栈，fallback 报告路径可以工作，但还不是完整的
-真实 LLM 验收：
+这是一个可运行的基线栈，真实 Qwen 端到端链路已经通过验收。仍需注意：
 
-- API 容器访问 DashScope 北京和新加坡 OpenAI 兼容接口时，在认证前的
-  TLS 握手阶段失败。无论直连还是通过宿主机代理
-  `host.docker.internal:7890`，都出现
-  `SSL: UNEXPECTED_EOF_WHILE_READING`。容器内已经能看到正确的
-  `LLM_API_BASE`、`HTTP_PROXY`、`HTTPS_PROXY` 和 `LLM_API_KEY`，因此目前
-  记录为环境或代理出口问题，而不是应用配置错误。
-  后续对比测试显示，同一容器通过同一代理可以正常访问 Google、GitHub
-  和 Cloudflare，只有 DashScope / Aliyun 域名失败，因此更可能是
-  FlClash 规则把 Aliyun 域名直连，或当前代理节点出口无法完成 DashScope
-  TLS 握手。
+- DashScope 连通性依赖 FlClash 当前节点。若后续再次出现
+  `SSL: UNEXPECTED_EOF_WHILE_READING`，优先切换可访问 DashScope 的节点。
+  这类问题发生在 TLS 握手阶段，通常不是应用配置或 API Key 问题。
 - 导入项目默认的 RAG embedding 模型 `BAAI/bge-zh-qwen2-int8` 无法解析到
   公开 HuggingFace 仓库。当前改用公开的 1024 维 `BAAI/bge-m3`，并在
   知识库为空时跳过本地模型加载。
@@ -158,5 +165,5 @@ DashScope TLS 连通性问题影响。
 ## 基线状态
 
 应用栈可运行，Agent / SSE / 报告持久化链路已经用公开来源证据验证。
-自动化测试通过，前端提交流程也已经可视化验证。Milestone 1 目前只剩
-API 容器内真实调用 `qwen3.5-flash` 这一项受本地网络或代理出口阻塞。
+自动化测试通过，前端提交流程已可视化验证，API 容器内真实
+`qwen3.5-flash` 调用也已通过。Milestone 1 基线复现完成。
