@@ -575,6 +575,7 @@ class ResearchState(TypedDict):
     github_repositories: list[dict]
     github_evidence: list[dict]
     github_scorecards: list[dict]
+    github_comparison: dict | None
 
     # ===== 主题 5: 校验 =====
     verification: dict | None       # VerificationResult
@@ -630,6 +631,7 @@ class ResearchState(TypedDict):
     github_repositories: Annotated[list[dict], merge_lists] = []
     github_evidence: Annotated[list[dict], merge_lists] = []
     github_scorecards: Annotated[list[dict], merge_lists] = []
+    github_comparison: dict | None
 
     # ===== 主题 5: 校验 =====
     verification: dict | None       # VerificationResult
@@ -696,6 +698,7 @@ def create_initial_state(
         github_repositories=[],
         github_evidence=[],
         github_scorecards=[],
+        github_comparison=None,
 
         verification=None,
         revision_needed=False,

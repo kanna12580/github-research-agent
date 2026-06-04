@@ -68,6 +68,7 @@ from app.guardrails import (
     is_tool_allowed,
     record_guardrail_event,
 )
+from app.github_research.comparison import compare_repository_scorecards, comparison_to_evidence_text
 from app.github_research.collector import GitHubRepositoryCollector
 from app.github_research.models import GitHubEvidenceBundle, RepositoryScorecard
 from app.github_research.url_parser import extract_github_repository_urls
@@ -468,6 +469,37 @@ def dag_results_aggregator(state: ResearchState) -> dict:
             retrieval_policy["web_search_reason"] = "rag_empty_auto_web"
 
     trace = []
+    comparison_payload: dict[str, Any] | None = None
+    comparison_evidence = []
+    if current_nodes and all(
+        (node.node_type == "github")
+        for node in dag.nodes
+        if node.node_id in current_nodes
+    ):
+        scorecards = state.get("github_scorecards", [])
+        if len(scorecards) >= 2 and not state.get("github_comparison"):
+            from app.graph.state import Evidence
+
+            comparison = compare_repository_scorecards(scorecards)
+            comparison_payload = comparison.model_dump(mode="json")
+            comparison_text = comparison_to_evidence_text(comparison)
+            comparison_evidence_item = Evidence(
+                content=comparison_text,
+                source_url=comparison.evidence_refs[0] if comparison.evidence_refs else None,
+                source_title="GitHub repository comparison ranking",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+                reliability=0.92,
+            )
+            comparison_evidence = [comparison_evidence_item.model_dump()]
+            trace.append(_append_trace_event(
+                state,
+                EventType.AGENT_COMPLETE,
+                "github_comparison",
+                f"Ranked {len(comparison.ranking)} GitHub repositories; recommended {comparison.recommended_repository}.",
+                {"github_comparison": comparison_payload},
+            ))
+
     if skipped_web_nodes:
         trace.append(_append_trace_event(
             state,
@@ -488,12 +520,17 @@ def dag_results_aggregator(state: ResearchState) -> dict:
             {"retrieval_policy": retrieval_policy},
         ))
 
-    return {
+    result = {
         "dag": serialize_dag(dag),
         "completed_nodes": completed,
         "retrieval_policy": retrieval_policy,
         "agent_trace": trace,
     }
+    if comparison_payload is not None:
+        result["github_comparison"] = comparison_payload
+        result["collected_evidence"] = comparison_evidence
+        result["aggregated_evidence"] = comparison_evidence
+    return result
 
 
 def should_continue_dag(state: ResearchState) -> str:

@@ -18,6 +18,7 @@ class TestResearchState:
         assert state["github_repositories"] == []
         assert state["github_evidence"] == []
         assert state["github_scorecards"] == []
+        assert state["github_comparison"] is None
 
     def test_research_state_has_required_keys(self):
         state = create_initial_state("query")
@@ -26,7 +27,7 @@ class TestResearchState:
             "dag", "current_executing_nodes", "completed_nodes",
             "tool_histories", "collected_evidence", "verification",
             "search_results", "browser_results", "rag_results", "aggregated_evidence",
-            "github_repositories", "github_evidence", "github_scorecards",
+            "github_repositories", "github_evidence", "github_scorecards", "github_comparison",
             "revision_needed", "revision_count", "analysis",
             "final_report", "citations", "guardrail_decision", "evidence_status",
             "review_status", "user_confirmed", "allow_web_after_rag_hit", "rag_group",
@@ -386,6 +387,50 @@ class TestGraphCompilation:
 
         assert web.status == StepStatus.PENDING
         assert result["retrieval_policy"]["web_search_required"] is True
+
+    def test_dag_aggregator_builds_github_comparison_after_multi_repo_batch(self):
+        from app.graph.compiler import dag_results_aggregator
+        from app.graph.state import DAGDefinition, PlanNode, serialize_dag
+
+        github_a = PlanNode(node_id="g1", node_type="github", query="https://github.com/acme/a")
+        github_b = PlanNode(node_id="g2", node_type="github", query="https://github.com/acme/b")
+        state = create_initial_state(
+            "Compare https://github.com/acme/a and https://github.com/acme/b",
+            "session-1",
+        )
+        state["dag"] = serialize_dag(DAGDefinition(dag_name="test", nodes=[github_a, github_b], edges=[]))
+        state["current_executing_nodes"] = ["g1", "g2"]
+        state["github_scorecards"] = [
+            {
+                "full_name": "acme/a",
+                "dimensions": [
+                    {"name": "reproducibility", "score": 9, "rationale": "good", "evidence_refs": ["https://example.com/a/readme"]},
+                    {"name": "project_depth", "score": 8, "rationale": "good", "evidence_refs": ["https://example.com/a/tree"]},
+                    {"name": "stack_breadth", "score": 7, "rationale": "good", "evidence_refs": []},
+                    {"name": "extensibility", "score": 9, "rationale": "good", "evidence_refs": []},
+                    {"name": "engineering_quality", "score": 8, "rationale": "good", "evidence_refs": []},
+                    {"name": "risk_control", "score": 8, "rationale": "good", "evidence_refs": []},
+                ],
+            },
+            {
+                "full_name": "acme/b",
+                "dimensions": [
+                    {"name": "reproducibility", "score": 5, "rationale": "weak", "evidence_refs": ["https://example.com/b/readme"]},
+                    {"name": "project_depth", "score": 6, "rationale": "ok", "evidence_refs": []},
+                    {"name": "stack_breadth", "score": 8, "rationale": "good", "evidence_refs": []},
+                    {"name": "extensibility", "score": 5, "rationale": "weak", "evidence_refs": []},
+                    {"name": "engineering_quality", "score": 5, "rationale": "weak", "evidence_refs": []},
+                    {"name": "risk_control", "score": 7, "rationale": "ok", "evidence_refs": []},
+                ],
+            },
+        ]
+
+        result = dag_results_aggregator(state)
+
+        assert result["github_comparison"]["recommended_repository"] == "acme/a"
+        assert result["github_comparison"]["ranking"][0]["rank"] == 1
+        assert result["collected_evidence"][0]["source_title"] == "GitHub repository comparison ranking"
+        assert "Recommended repository: acme/a" in result["collected_evidence"][0]["content"]
 
 
 if __name__ == "__main__":

@@ -137,7 +137,10 @@ Current implementation order:
    state for future comparison UI and verification work.
 5. Template GitHub technical research reports so repository tasks no longer use
    the generic business research report structure.
-6. Add single-repository workflow tests before adding multi-repository ranking.
+6. Add deterministic multi-repository comparison and ranking before frontend
+   visualization work.
+7. Add single-repository and multi-repository workflow tests before expanding
+   evaluation tasks.
 
 Current technical additions:
 
@@ -150,11 +153,19 @@ Current technical additions:
   architecture and Agent workflow depth, stack breadth, extensibility,
   engineering quality, risks and interview presentation advice
 - deterministic GitHub fallback report skeleton for offline or failed LLM runs
+- deterministic multi-repository comparison using scorecard weights tuned for
+  resume/interview reproduction suitability
+- GitHub comparison state and ranking evidence injected into the existing
+  analyst/report path
 
 Do not build a separate report pipeline yet. The existing research task
 entrypoint should reliably produce a cited GitHub technical research report
 from one public repository URL, and then extend toward multi-repository
 comparison.
+
+For multi-repository comparison, prefer deterministic ranking from structured
+scorecards over free-form LLM judgment. LLM synthesis may explain the ranking,
+but it must not invent scores or reorder repositories without evidence.
 
 ### Milestone 4: Demonstration And Evaluation
 

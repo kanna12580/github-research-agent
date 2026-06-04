@@ -360,6 +360,8 @@ Make sure every factual claim has a [citation:N] reference."""
     def _github_dimension_hint(self, evidence: Evidence) -> str:
         title = (evidence.source_title or "").lower()
         content = evidence.content.lower()
+        if "comparison ranking" in title or "comparison ranking" in content:
+            return "多仓库排序、推荐选择、优先级判断"
         if "scorecard" in title or "scorecard" in content:
             return "评分总览、风险控制、综合判断"
         if "readme" in title:

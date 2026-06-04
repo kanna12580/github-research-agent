@@ -121,6 +121,30 @@ class RepositoryScorecard(BaseModel):
         return round(self.total_score / len(self.dimensions), 2)
 
 
+class RankedRepository(BaseModel):
+    """Repository ranking result for multi-repository technical comparison."""
+
+    rank: int
+    full_name: str
+    weighted_score: float = Field(ge=0.0, le=10.0)
+    average_score: float = Field(ge=0.0, le=10.0)
+    total_score: int = 0
+    dimension_scores: dict[str, int] = Field(default_factory=dict)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    recommendation: str = ""
+
+
+class RepositoryComparison(BaseModel):
+    """Deterministic comparison and ranking for multiple GitHub repositories."""
+
+    repositories: list[str] = Field(default_factory=list)
+    ranking: list[RankedRepository] = Field(default_factory=list)
+    recommended_repository: str | None = None
+    summary: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class GitHubEvidenceBundle(BaseModel):
     """Complete GitHub evidence package for one repository."""
 
