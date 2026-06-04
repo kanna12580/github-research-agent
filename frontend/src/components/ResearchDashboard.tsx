@@ -16,6 +16,7 @@ import type { SSEvent } from '../hooks/useSSE'
 import AgentTrace from './AgentTrace'
 import ToolTrace from './ToolTrace'
 import ReportPreview from './ReportPreview'
+import GitHubResearchSummary from './GitHubResearchSummary'
 
 interface ResearchResult {
   session_id: string
@@ -42,6 +43,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const [ragGroup, setRagGroup] = useState('')
   const [allowWebAfterRagHit, setAllowWebAfterRagHit] = useState(false)
   const [outputLength, setOutputLength] = useState<'short' | 'medium' | 'long'>('medium')
+  const [githubUrls, setGithubUrls] = useState('')
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionStatus, setSessionStatus] = useState<string | null>(null)
@@ -152,11 +154,25 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const handleNewResearch = useCallback(() => {
     setActiveSessionId(null)
     setQuery('')
+    setGithubUrls('')
     setRagGroup('')
     setSessionStatus(null)
     clearEvents()
     inputRef.current?.focus()
   }, [clearEvents])
+
+  const handleBuildGithubQuery = useCallback(() => {
+    const urls = githubUrls
+      .split(/\s+/)
+      .map(item => item.trim())
+      .filter(Boolean)
+    if (urls.length === 0) return
+    const task = urls.length === 1
+      ? `请对这个 GitHub 开源项目做技术调研报告，重点分析可复现性、架构与 Agent 工作流深度、技术栈广度、可扩展性、工程质量和风险：${urls[0]}`
+      : `请对以下 GitHub 开源项目做技术调研、对比排序，并推荐最适合作为简历/面试复刻项目的仓库：${urls.join(' ')}`
+    setQuery(task)
+    setOutputLength(urls.length > 1 ? 'long' : 'medium')
+  }, [githubUrls])
 
   const displayReport = streamedReport || result?.report || ''
   const normalizedCitations = Array.isArray(result?.citations) ? result.citations : []
@@ -246,6 +262,40 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
           <p className="mt-3 text-xs text-xmgray-400 text-center">
             默认先搜内部 RAG；内部没有结果时自动联网
           </p>
+          <div className="mt-4 rounded-2xl border border-xm-100 bg-xm-50/60 p-4 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-xmgray-800">GitHub 开源项目调研</p>
+                <p className="mt-1 text-xs text-xmgray-500">
+                  粘贴一个或多个仓库 URL，自动生成技术调研、评分表和推荐排序。
+                </p>
+              </div>
+              <span className="tag-orange shrink-0">Milestone 3</span>
+            </div>
+            <textarea
+              value={githubUrls}
+              onChange={e => setGithubUrls(e.target.value)}
+              placeholder="https://github.com/wblxr408/DeepIntel&#10;https://github.com/tarun7r/deep-research-agent"
+              className="mt-3 min-h-20 w-full rounded-xl border border-xm-100 bg-white px-3 py-2 text-sm text-xmgray-700 outline-none focus:border-xm-400"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBuildGithubQuery}
+                disabled={!githubUrls.trim()}
+                className="btn-secondary py-2 text-xs"
+              >
+                生成 GitHub 调研任务
+              </button>
+              <button
+                type="button"
+                onClick={() => setGithubUrls('https://github.com/wblxr408/DeepIntel\nhttps://github.com/PavithraNagineni/multi-agent-research-system\nhttps://github.com/tarun7r/deep-research-agent')}
+                className="tag hover:bg-white"
+              >
+                使用三项目对比示例
+              </button>
+            </div>
+          </div>
           <div className="mt-4 rounded-2xl border border-xmgray-100 bg-white/80 p-4 text-left shadow-sm">
             <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
               <label className="block">
@@ -300,6 +350,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
             '2025年AI Agent市场分析',
             '量子计算最新进展',
             '中国新能源汽车出口数据',
+            '请对比 https://github.com/wblxr408/DeepIntel https://github.com/tarun7r/deep-research-agent 并推荐复刻优先级',
           ].map(q => (
             <button
               key={q}
@@ -424,6 +475,13 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
 
         {/* Right: Report panel */}
         <div className="lg:col-span-8 space-y-4">
+          <GitHubResearchSummary
+            query={result?.query || query}
+            events={events}
+            report={displayReport}
+            streaming={isStreaming}
+          />
+
           {/* Report */}
           <div className="card p-0 overflow-hidden">
             <div className="px-5 py-4 flex items-center justify-between border-b border-xmgray-100">

@@ -173,6 +173,17 @@ but it must not invent scores or reorder repositories without evidence.
 - Measure citation coverage, score consistency, latency and model/token cost.
 - Prepare screenshots, architecture documentation and interview-ready examples.
 
+Current frontend demonstration direction:
+
+- Provide a GitHub repository input area that can turn one or more public
+  repository URLs into a research prompt.
+- Show a GitHub technical research dashboard with detected repositories,
+  GitHub tool activity, recommended repository and ranking table.
+- Keep the existing SSE agent trace, tool trace, report preview and citation
+  panels visible during GitHub research runs.
+- Favor interview-demo clarity over adding a separate complex frontend route
+  until the core workflow is stable.
+
 ## Version Control Rules
 
 - Use `main` as the stable integration branch.

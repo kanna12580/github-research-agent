@@ -23,6 +23,8 @@ const AGENT_CONFIG: Record<string, AgentConfig> = {
   search:    { label: '搜索',   color: 'text-blue-600',    bg: 'bg-blue-50' },
   browser:   { label: '浏览器', color: 'text-emerald-600', bg: 'bg-emerald-50' },
   rag:       { label: '检索',   color: 'text-amber-600',  bg: 'bg-amber-50' },
+  github:    { label: 'GitHub', color: 'text-slate-700',  bg: 'bg-slate-100' },
+  github_comparison: { label: '排序', color: 'text-xm-700', bg: 'bg-xm-50' },
   analyst:   { label: '分析师', color: 'text-purple-600', bg: 'bg-purple-50' },
   reflection:{ label: '反思',   color: 'text-rose-600',   bg: 'bg-rose-50' },
   report:    { label: '报告',   color: 'text-xm-600',    bg: 'bg-xm-50' },

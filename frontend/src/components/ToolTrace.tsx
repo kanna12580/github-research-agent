@@ -78,6 +78,15 @@ const TOOL_ICONS: Record<string, { icon: JSX.Element; color: string; bg: string 
     color: 'text-amber-600',
     bg: 'bg-amber-50',
   },
+  github_repository_collect: {
+    icon: (
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M6 1.5C3.8 1.5 2 3.3 2 5.5C2 7.2 3.1 8.6 4.6 9.1C4.8 9.1 4.9 9 4.9 8.9V7.9C3.8 8.1 3.5 7.4 3.5 7.4C3.3 6.9 3.1 6.8 3.1 6.8C2.8 6.6 3.1 6.6 3.1 6.6C3.5 6.6 3.7 7 3.7 7C4.1 7.6 4.7 7.4 4.9 7.3C4.9 7 5 6.8 5.1 6.7C4.2 6.6 3.3 6.2 3.3 4.8C3.3 4.4 3.5 4 3.7 3.7C3.7 3.6 3.5 3.2 3.8 2.6C3.8 2.6 4.1 2.5 4.9 3C5.2 2.9 5.6 2.9 6 2.9C6.4 2.9 6.8 2.9 7.1 3C7.9 2.5 8.2 2.6 8.2 2.6C8.5 3.2 8.3 3.6 8.3 3.7C8.5 4 8.7 4.4 8.7 4.8C8.7 6.2 7.8 6.6 6.9 6.7C7.1 6.8 7.2 7.1 7.2 7.6V8.9C7.2 9 7.3 9.1 7.5 9.1C8.9 8.6 10 7.2 10 5.5C10 3.3 8.2 1.5 6 1.5Z" fill="currentColor"/>
+      </svg>
+    ),
+    color: 'text-slate-700',
+    bg: 'bg-slate-100',
+  },
   duckduckgo_search: {
     icon: (
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
