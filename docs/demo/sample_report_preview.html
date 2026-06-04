@@ -1,0 +1,101 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitHub Research Agent Demo Report</title>
+  <style>
+    body { margin: 0; background: #f6f8fb; color: #172033; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    main { max-width: 1040px; margin: 32px auto; background: #fff; border: 1px solid #d8dee9; border-radius: 16px; padding: 32px 40px; box-shadow: 0 16px 48px rgba(23,32,51,.08); }
+    pre { white-space: pre-wrap; word-break: break-word; line-height: 1.62; font-size: 15px; margin: 0; }
+  </style>
+</head>
+<body><main><pre># Demo 样例报告：GitHub Agent 项目对比
+
+- Session ID: e3e8efd4-fe95-4d51-b2e3-e149fdee299a
+- Status: completed
+- Citations: 30
+- Generated At: 2026-06-04 16:38:56 +08:00
+
+---
+
+# GitHub 开源项目技术调研报告：wblxr408/DeepIntel, PavithraNagineni/multi-agent-research-system, tarun7r/deep-research-agent, resume/interview reproduction suitability.
+**Recommended repository**: wblxr408/DeepIntel
+
+## 1. 结论摘要
+推荐优先选择 **wblxr408/DeepIntel** 进行简历复刻与面试展示 [16]。核心原因如下：
+1.  **工程完整性最佳**：该项目具备完整的前后端分离架构（React + FastAPI）及 Docker 化部署方案，适合展示全栈 Agent 开发能力 [3][5]。
+2.  **工作流深度适中**：基于 LangGraph 的 DAG 状态机设计清晰，包含 Planner、Analyst、Reflection 等明确角色分工，便于面试中解释复杂逻辑 [2][3]。
+3.  **可复现性满分**：README 提供详细的安装指引、依赖清单及环境配置，启动成本可控 [2]。
+
+相比之下，PavithraNagineni 项目缺乏前端组件限制了展示维度，而 tarun7r 项目文件过少且无测试代码，难以支撑深度技术问答 [12][16]。
+
+## 2. 评分总览
+| 仓库 | 可复现性 | 项目深度 | 技术栈广度 | 可扩展性 | 工程质量 | 风险控制 | 综合判断 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| wblxr408/DeepIntel | 10 | 4 | 10 | 4 | 6 | 8 | 优先推荐复刻/改造 [16] |
+| PavithraNagineni/multi-agent-research-system | 10 | 2 | 9 | 2 | 6 | 8 | 适合作为风险对照样例 [16] |
+| tarun7r/deep-research-agent | 9 | 2 | 5 | 2 | 3 | 9 | 不建议作为主复刻项目 [16] |
+
+*注：评分基于各仓库确定性 Scorecard 证据 [2][7][12]，综合权重参考对比排名表 [16]。*
+
+## 3. 可复现性与启动成本
+三个仓库在基础文档层面均表现良好，但细节存在差异。
+*   **wblxr408/DeepIntel**：README 包含完整的安装、使用及 Docker 参考章节 [3]。依赖管理包含 `requirements.txt` 和 `package-lock.json`，支持多语言包管理器锁定 [5]。
+*   **PavithraNagineni/multi-agent-research-system**：同样具备安装和使用说明，并引用了 Docker 配置 [8]。但其依赖清单缺少 Lockfile，可能增加环境一致性风险 [10]。
+*   **tarun7r/deep-research-agent**：提供了快速开始（Quickstart）指南，但未提供 Docker 容器化支持，仅依赖本地 Python 环境 [13][14]。对于需要演示生产级部署的面试场景，此点为劣势。
+
+## 4. 架构与 Agent 工作流深度
+*   **wblxr408/DeepIntel**：采用 LangGraph 构建可执行 DAG，明确定义了用户输入 -&gt; Planner -&gt; 并行采集 -&gt; Analyst -&gt; Reflection -&gt; Report 的链路 [3]。目录结构包含 `metrics` 和 `app` 模块，展示了状态机式工作流的设计意图 [4]。
+*   **PavithraNagineni/multi-agent-research-system**：架构包含 Researcher、Critic、Writer 三个 Agent 协作，集成 MLflow 用于实验追踪 [8]。但目录结构相对扁平，仅 107 个文件，深度不及 DeepIntel [9]。
+*   **tarun7r/deep-research-agent**：描述为四 Agent 协作系统，但源码仅约 30 个文件，主要位于 `src` 目录下 [14]。代码量较少，难以支撑关于“长生命周期会话”或“复杂状态管理”的深度追问。
+
+## 5. 技术栈广度
+*   **wblxr408/DeepIntel**：技术栈最丰富，涵盖 Python (FastAPI)、JavaScript/TypeScript (React/Vite)、PostgreSQL、Redis、Playwright 及 Docker 编排 [5]。这种全栈组合在面试中能体现较强的工程落地能力。
+*   **PavithraNagineni/multi-agent-research-system**：主要聚焦于 Python 生态，结合 Docker 和 MLflow，未涉及前端技术栈 [10]。
+*   **tarun7r/deep-research-agent**：纯 Python 项目，使用 `pyproject.toml` 管理依赖，未检测到容器化或前端框架 [15]。
+
+## 6. 可扩展性
+*   **wblxr408/DeepIntel**：拥有独立的 `docs` 和 `metrics` 目录，部分模块（如 Browser Agent）有独立 README 说明 [4]。但缺失 `LICENSE` 文件和 `CONTRIBUTING` 指南，限制了社区贡献视角的扩展性讨论 [4]。
+*   **PavithraNagineni/multi-agent-research-system**：缺乏文档和示例代码，扩展性评分较低 [7]。
+*   **tarun7r/deep-research-agent**：唯一拥有 MIT 许可证的项目，法律风险最低，但缺乏贡献指南和模块化文档 [11][14]。
+
+## 7. 工程质量
+*   **测试覆盖**：wblxr408/DeepIntel 和 PavithraNagineni 项目均包含 `tests` 目录，表明有单元测试意识 [4][9]。tarun7r 项目明确标记 `has_tests=False` [14]。
+*   **CI/CD**：三个仓库均未检测到自动化 CI 流水线配置（GitHub Actions 等），这在工程成熟度上均为扣分项 [4][9][14]。
+*   **活跃度**：wblxr408/DeepIntel 最近更新时间为 2026-06-01，显示近期维护活跃 [1]。tarun7r 项目 Star 数最高（171），但最后一次推送较早（2026-04-04）[11]。
+
+## 8. 风险点与补救建议
+| 风险点 | 受影响仓库 | 补救建议 |
+| :--- | :--- | :--- |
+| **缺少开源协议** | wblxr408/DeepIntel, PavithraNagineni | 面试前自行添加 MIT 协议声明，避免版权争议 [4][9]。 |
+| **无自动化测试** | tarun7r/deep-research-agent | 若选用此项目，需手动编写关键路径的单元测试以证明质量意识 [14]。 |
+| **缺少 CI 流水线** | 全部三个仓库 | 建议在面试准备时，自行搭建一个简单的 GitHub Actions 流程作为加分项 [4][9][14]。 |
+| **前端缺失** | PavithraNagineni, tarun7r | 若选这两个项目，需额外准备一个简易 UI 界面截图或 Mock 数据展示 [8][13]。 |
+
+## 9. 面试展示建议
+针对推荐的 **wblxr408/DeepIntel**，建议采取以下策略：
+1.  **重点讲解 DAG 设计**：利用 `app` 目录下的 LangGraph 代码，解释如何通过节点定义实现条件分支和循环校验 [3]。
+2.  **强调全栈闭环**：展示从 React 前端 SSE 流式输出到后端 PostgreSQL 存储的完整数据流转 [3]。
+3.  **准备 Metrics 分析**：深入阅读 `metrics` 目录下的模块文档，能够回答关于如何量化 Agent 表现的问题 [4]。
+4.  **规避 License 问题**：在演示环境中注明个人学习用途，或在代码库根目录补充 License 文件 [4]。
+
+## References
+[1] wblxr408/DeepIntel repository metadata
+[2] wblxr408/DeepIntel deterministic scorecard
+[3] wblxr408/DeepIntel README
+[4] wblxr408/DeepIntel file tree
+[5] wblxr408/DeepIntel dependency manifests
+[7] PavithraNagineni/multi-agent-research-system deterministic scorecard
+[8] PavithraNagineni/multi-agent-research-system README
+[9] PavithraNagineni/multi-agent-research-system file tree
+[10] PavithraNagineni/multi-agent-research-system dependency manifests
+[11] tarun7r/deep-research-agent repository metadata
+[12] tarun7r/deep-research-agent deterministic scorecard
+[13] tarun7r/deep-research-agent README
+[14] tarun7r/deep-research-agent file tree
+[15] tarun7r/deep-research-agent dependency manifests
+[16] GitHub repository comparison ranking
+
+</pre></main></body>
+</html>

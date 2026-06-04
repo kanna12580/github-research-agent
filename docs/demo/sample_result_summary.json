@@ -1,0 +1,8 @@
+﻿{
+    "session_id":  "e3e8efd4-fe95-4d51-b2e3-e149fdee299a",
+    "status":  "completed",
+    "query":  "Compare these GitHub repositories for resume/interview reproduction suitability and generate a Chinese technical research report with ranking, evidence-backed scores, risks, and interview demo advice: https://github.com/wblxr408/DeepIntel https://github.com/PavithraNagineni/multi-agent-research-system https://github.com/tarun7r/deep-research-agent",
+    "report_chars":  6891,
+    "citation_count":  30,
+    "generated_at":  "2026-06-04 16:38:56 +08:00"
+}

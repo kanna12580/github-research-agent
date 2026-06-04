@@ -203,6 +203,20 @@ The first fixed demo task compares:
 The demo/evaluation assets live in `docs/DEMO_EVALUATION.md` and
 `docs/demo/github_agent_comparison_demo.json`.
 
+Status: first demo loop complete. A real end-to-end GitHub comparison research
+task has been run with `GITHUB_TOKEN` configured and saved as:
+
+- `docs/demo/sample_report.md`
+- `docs/demo/sample_result_summary.json`
+- `docs/demo/sample_citations.json`
+- `docs/demo/sample_report_preview.html`
+- `docs/demo/screenshots/01_frontend_home.png`
+- `docs/demo/screenshots/02_sample_report_preview.png`
+
+Keep these sample artifacts sanitized and small. They are intentionally committed
+as interview-ready examples; do not commit arbitrary generated reports or local
+runtime output.
+
 ## Version Control Rules
 
 - Use `main` as the stable integration branch.
