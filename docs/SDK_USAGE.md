@@ -169,7 +169,33 @@ Set-Content -Path "docs/demo/sample_report.md" -Value $result.report -Encoding U
 $result.citations | ConvertTo-Json -Depth 12 | Set-Content -Path "docs/demo/sample_citations.json" -Encoding UTF8
 ```
 
-## 7. SSE 事件流
+## 7. 查询历史研究任务
+
+列出最近研究任务：
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/research/sessions?limit=20" -Method Get
+```
+
+返回字段：
+
+- `session_id`：研究任务 ID
+- `query`：用户输入
+- `status`：`running`、`completed`、`failed` 等状态
+- `created_at` / `updated_at` / `completed_at`：时间信息
+- `citation_count`：引用数量
+- `report_preview`：报告预览片段
+
+恢复某个报告：
+
+```powershell
+$sid = "替换为历史中的 session_id"
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/research/$sid" -Method Get
+```
+
+前端“最近研究”面板优先使用后端历史接口；如果后端暂时不可用，会使用浏览器 `localStorage` 中的本地历史作为演示兜底。
+
+## 8. SSE 事件流
 
 前端使用 SSE 展示 Agent 实时进度。也可以用 PowerShell 观察事件流：
 
@@ -186,7 +212,7 @@ curl.exe -N "http://localhost:8000/api/v1/research/$sid/stream"
 - scorecard 与 ranking
 - report 生成完成
 
-## 8. 前端演示
+## 9. 前端演示
 
 打开：
 
@@ -200,9 +226,10 @@ http://localhost:5173
 2. 点击“生成 GitHub 调研任务”。
 3. 点击“研究”。
 4. 展示 Agent trace、GitHub ranking、推荐仓库和最终报告。
-5. 打开 [Demo 样例与评测闭环](DEMO_EVALUATION.md) 中保存的样例报告与截图。
+5. 刷新页面后，在“最近研究”面板点击历史记录，验证报告恢复能力。
+6. 打开 [Demo 样例与评测闭环](DEMO_EVALUATION.md) 中保存的样例报告与截图。
 
-## 9. 常见问题
+## 10. 常见问题
 
 ### 修改 `.env` 后 Token 没生效
 

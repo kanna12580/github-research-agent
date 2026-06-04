@@ -308,6 +308,47 @@ class TestResearchResultNormalization:
 
         assert response["citations"] == [{"citation_id": "citation:1", "source_url": "https://example.com"}]
 
+    @pytest.mark.asyncio
+    async def test_list_research_sessions_returns_recent_summaries(self):
+        from app.api.research import list_research_sessions
+
+        row = {
+            "id": "test-session",
+            "user_query": "Compare GitHub repos",
+            "status": "completed",
+            "final_report": "A" * 300,
+            "citations": [{"citation_id": "citation:1"}],
+            "created_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:00:00"),
+            "updated_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:01:00"),
+            "completed_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:02:00"),
+            "stored_citation_count": 3,
+        }
+
+        class FakeConn:
+            async def fetch(self, *args, **kwargs):
+                return [row]
+
+            def acquire(self):
+                return self
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakePool:
+            def acquire(self):
+                return FakeConn()
+
+        with patch("app.api.research.get_db_pool", AsyncMock(return_value=FakePool())):
+            response = await list_research_sessions(limit=10)
+
+        assert len(response) == 1
+        assert response[0].session_id == "test-session"
+        assert response[0].citation_count == 3
+        assert response[0].report_preview == "A" * 240
+
 
 class TestGraphCompilation:
     """Tests for graph compilation and structure."""

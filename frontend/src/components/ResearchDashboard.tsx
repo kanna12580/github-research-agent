@@ -9,7 +9,7 @@
  * - Split layout: traces | report
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useSSE } from '../hooks/useSSE'
 import type { SSEvent } from '../hooks/useSSE'
@@ -34,9 +34,22 @@ interface ResearchResult {
   completed_at: string | null
 }
 
+interface ResearchSessionSummary {
+  session_id: string
+  query: string
+  status: string
+  created_at: string
+  updated_at?: string | null
+  completed_at?: string | null
+  citation_count?: number
+  report_preview?: string | null
+}
+
 interface ResearchDashboardProps {
   onBack?: () => void
 }
+
+const HISTORY_STORAGE_KEY = 'github-research-agent:history'
 
 const DEMO_GITHUB_URLS = [
   'https://github.com/wblxr408/DeepIntel',
@@ -51,6 +64,64 @@ const buildGithubResearchPrompt = (urls: string[]): string => {
   return `请对以下 GitHub 开源项目做技术调研、对比排序，并推荐最适合作为简历/面试复刻项目的仓库：${urls.join(' ')}`
 }
 
+function readLocalHistory(): ResearchSessionSummary[] {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeLocalHistory(items: ResearchSessionSummary[]) {
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 20)))
+  } catch {
+    // localStorage is best-effort demo continuity; backend history remains authoritative.
+  }
+}
+
+function mergeHistory(
+  remoteHistory: ResearchSessionSummary[],
+  localHistory: ResearchSessionSummary[],
+): ResearchSessionSummary[] {
+  const byId = new Map<string, ResearchSessionSummary>()
+  for (const item of [...localHistory, ...remoteHistory]) {
+    byId.set(item.session_id, { ...byId.get(item.session_id), ...item })
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))
+    .slice(0, 20)
+}
+
+function formatHistoryTime(value?: string | null): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function statusLabel(status: string): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'running') return '运行中'
+  if (status === 'failed') return '失败'
+  if (status === 'pending' || status === 'pending_confirmation') return '待确认'
+  return status || '未知'
+}
+
+function statusClass(status: string): string {
+  if (status === 'completed') return 'bg-emerald-50 text-emerald-700 border-emerald-100'
+  if (status === 'running') return 'bg-xm-50 text-xm-700 border-xm-100'
+  if (status === 'failed') return 'bg-red-50 text-red-700 border-red-100'
+  return 'bg-xmgray-50 text-xmgray-500 border-xmgray-100'
+}
+
 function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const [query, setQuery] = useState('')
   const [ragGroup, setRagGroup] = useState('')
@@ -58,6 +129,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const [outputLength, setOutputLength] = useState<'short' | 'medium' | 'long'>('medium')
   const [githubUrls, setGithubUrls] = useState('')
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [localHistory, setLocalHistory] = useState<ResearchSessionSummary[]>(() => readLocalHistory())
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionStatus, setSessionStatus] = useState<string | null>(null)
@@ -66,20 +138,46 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   // SSE for real-time updates
   const { events, status: sseStatus, error: sseError, clearEvents } = useSSE(activeSessionId)
 
+  const { data: remoteHistory = [] } = useQuery<ResearchSessionSummary[]>({
+    queryKey: ['research-sessions'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/research/sessions?limit=20')
+      if (!res.ok) throw new Error('Failed to fetch research sessions')
+      return res.json()
+    },
+    refetchInterval: activeSessionId ? 5000 : 15000,
+  })
+
+  const historyItems = useMemo(
+    () => mergeHistory(remoteHistory, localHistory),
+    [remoteHistory, localHistory],
+  )
+
+  const upsertLocalHistory = useCallback((item: ResearchSessionSummary) => {
+    setLocalHistory(prev => {
+      const next = [
+        item,
+        ...prev.filter(existing => existing.session_id !== item.session_id),
+      ].slice(0, 20)
+      writeLocalHistory(next)
+      return next
+    })
+  }, [])
+
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
   // Fetch research result
-  const { data: result } = useQuery<ResearchResult>({
+  const { data: result, refetch: refetchResult } = useQuery<ResearchResult>({
     queryKey: ['research', activeSessionId],
     queryFn: async () => {
       const res = await fetch(`/api/v1/research/${activeSessionId}`)
       if (!res.ok) throw new Error('Failed to fetch result')
       return res.json()
     },
-    enabled: !!activeSessionId && !isStreaming,
+    enabled: !!activeSessionId,
     refetchInterval: isStreaming ? 3000 : false,
   })
 
@@ -103,6 +201,14 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
       setActiveSessionId(data.session_id)
       setIsStreaming(true)
       setSessionStatus(data.status)
+      upsertLocalHistory({
+        session_id: data.session_id,
+        query: query.trim(),
+        status: data.status,
+        created_at: new Date().toISOString(),
+        citation_count: 0,
+        report_preview: null,
+      })
       clearEvents()
     },
   })
@@ -113,8 +219,9 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
     if (doneEvent) {
       setIsStreaming(false)
       setSessionStatus(doneEvent.type === 'done' ? 'completed' : 'failed')
+      refetchResult()
     }
-  }, [events])
+  }, [events, refetchResult])
 
   useEffect(() => {
     if (sseStatus === 'error') {
@@ -128,8 +235,17 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
       if (result.status !== 'running') {
         setIsStreaming(false)
       }
+      upsertLocalHistory({
+        session_id: result.session_id,
+        query: result.query,
+        status: result.status,
+        created_at: result.created_at,
+        completed_at: result.completed_at,
+        citation_count: Array.isArray(result.citations) ? result.citations.length : 0,
+        report_preview: result.report ? result.report.slice(0, 240) : null,
+      })
     }
-  }, [result])
+  }, [result, upsertLocalHistory])
 
   // Build report from streaming chunks
   const streamedReport = events
@@ -203,6 +319,14 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
       setCopyStatus('failed')
     }
   }, [])
+
+  const handleRestoreSession = useCallback((item: ResearchSessionSummary) => {
+    setActiveSessionId(item.session_id)
+    setQuery(item.query)
+    setSessionStatus(item.status)
+    setIsStreaming(item.status === 'running' || item.status === 'pending')
+    clearEvents()
+  }, [clearEvents])
 
   const displayReport = streamedReport || result?.report || ''
   const normalizedCitations = Array.isArray(result?.citations) ? result.citations : []
@@ -388,6 +512,52 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
             </p>
           </div>
         </div>
+
+        {historyItems.length > 0 && (
+          <div className="mt-6 w-full max-w-2xl animate-fade-up" style={{ animationDelay: '0.2s' }}>
+            <div className="rounded-2xl border border-xmgray-100 bg-white p-4 text-left shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-xmgray-800">最近研究</h3>
+                  <p className="mt-1 text-xs text-xmgray-400">
+                    可从本地缓存或后端历史中恢复报告，不需要重新调用 LLM。
+                  </p>
+                </div>
+                <span className="tag text-[11px]">{historyItems.length} 条</span>
+              </div>
+              <div className="max-h-72 space-y-2 overflow-y-auto">
+                {historyItems.map(item => (
+                  <button
+                    key={item.session_id}
+                    type="button"
+                    onClick={() => handleRestoreSession(item)}
+                    className="w-full rounded-xl border border-xmgray-100 bg-xmgray-50/40 px-3 py-3 text-left transition-colors hover:border-xm-100 hover:bg-xm-50/50"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-xmgray-800">{item.query}</p>
+                        <p className="mt-1 truncate text-xs text-xmgray-400">
+                          {item.session_id} · {formatHistoryTime(item.completed_at || item.updated_at || item.created_at)}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusClass(item.status)}`}>
+                        {statusLabel(item.status)}
+                      </span>
+                    </div>
+                    {item.report_preview && (
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-xmgray-500">
+                        {item.report_preview}
+                      </p>
+                    )}
+                    <div className="mt-2 text-[11px] text-xmgray-400">
+                      引用：{item.citation_count || 0}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Example queries */}
         <div className="mt-10 flex flex-wrap justify-center gap-2 animate-fade-in" style={{ animationDelay: '0.3s' }}>

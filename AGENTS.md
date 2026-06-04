@@ -16,7 +16,7 @@ building the GitHub-domain layer incrementally. Do not replace the core
 LangGraph/FastAPI/SSE/report flow until the new GitHub evidence path has its
 own tests and a minimal working API surface.
 
-Current phase: Milestone 4, Demonstration and evaluation loop.
+Current phase: Milestone 5, Productization and demo reliability.
 
 ## Product Direction
 
@@ -223,6 +223,88 @@ support, clearer GitHub token/rate-limit failure guidance, highlighted report
 score tables, cleaned sample citations and build/smoke verification. The next
 project-level step is to merge `codex/github-research-workflow-m3` into `main`
 after user confirmation.
+
+### Milestone 5: Productization And Demo Reliability
+
+Goal: make the GitHub Repository Research Agent feel like a focused vertical
+product rather than a DeepIntel reproduction with extra GitHub features.
+
+User-reported issues to address:
+
+1. No visible research history in the frontend. Users should be able to see
+   recent research tasks and reopen generated reports.
+2. During research, the report panel can keep spinning with no obvious recovery
+   path. The demo docs need a troubleshooting path, and the UI should make
+   stalled/running/failed states easier to diagnose.
+3. The frontend still uses DeepIntel branding and generic research wording.
+   The UI should present the product as a GitHub open-source project technical
+   research agent.
+4. Some baseline features are less relevant to the vertical GitHub workflow.
+   Do not delete them immediately, but visually de-emphasize generic RAG/docs
+   functions unless they help the GitHub research demo.
+
+Implementation order:
+
+1. Research history:
+   - Add a backend session-list endpoint, for example
+     `GET /api/v1/research/sessions`, returning recent sessions with
+     `session_id`, query, status, created/completed times, citation count and a
+     short report preview.
+   - Add frontend local history as a fallback using `localStorage`, updated when
+     a task starts and when a task completes.
+   - Add a history panel in the research console so users can reopen recent
+     reports by session id.
+   - Keep database-backed history as the source of truth when the backend is
+     available; use local history only for quick demo continuity.
+
+   Status: implemented in the current Milestone 5 history pass. The backend now
+   exposes `GET /api/v1/research/sessions`, the frontend keeps a localStorage
+   fallback history, and the research console can reopen recent sessions without
+   rerunning the LLM. Continue to verify this path after API container rebuilds.
+
+2. Running/stalled report diagnosis:
+   - In the UI, show explicit states for connecting, collecting GitHub evidence,
+     waiting for LLM report generation, completed and failed.
+   - When no `report_chunk` has arrived after a reasonable interval, show a
+     non-blocking hint: the backend may still be running; use session status,
+     SSE stream and container logs for diagnosis.
+   - Ensure the frontend fetches the final report after `done` even if streamed
+     report chunks were missed.
+   - Update `docs/DEMO_EVALUATION.md` and `docs/SDK_USAGE.md` with a
+     troubleshooting checklist for spinning reports, including health checks,
+     `/api/v1/research/{session_id}`, SSE stream, Docker logs, DashScope API and
+     GitHub Token/rate-limit checks.
+
+3. Vertical product branding:
+   - Replace visible `DeepIntel` product branding in the frontend with a focused
+     name such as `GitHub Research Agent` or `RepoLens Agent`.
+   - Keep DeepIntel attribution in documentation as the reproduced baseline,
+     not as the current product identity.
+   - Rewrite the homepage hero, feature cards and footer around GitHub
+     repository evidence, deterministic scorecards, ranking and cited reports.
+   - Make the default CTA and demo path GitHub-research-first.
+
+4. Baseline feature de-emphasis:
+   - Keep generic research, internal RAG and document management code available
+     for now because they are part of the reproduced baseline and may support
+     future evidence retrieval.
+   - Move generic/internal docs features behind secondary navigation or a
+     collapsed advanced section.
+   - Avoid deleting baseline modules until GitHub-specific history, reliability
+     and branding are complete and tested.
+
+Acceptance criteria:
+
+- A user can start a GitHub research task, refresh the page and still find the
+  task in recent history.
+- A completed report can be reopened from history without rerunning the LLM.
+- A stalled report state gives concrete next diagnostic actions.
+- Frontend copy and visual identity describe the GitHub repository research
+  product, while docs still preserve DeepIntel reproduction attribution.
+- `npm run build` passes after frontend changes.
+- GitHub compare smoke test still returns a three-repository ranking with
+  `wblxr408/DeepIntel` as the fixed demo recommendation unless upstream
+  repository evidence changes.
 
 ## Version Control Rules
 

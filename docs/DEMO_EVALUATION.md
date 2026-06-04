@@ -58,13 +58,29 @@ http://localhost:5173
 3. 在首页的“GitHub 开源项目调研”面板点击“使用三项目对比示例”。
 4. 点击“生成 GitHub 调研任务”，确认主输入框已经生成对比排序 prompt。
 5. 点击“研究”开始任务。
-6. 观察演示点：
+6. 如果之前已经跑过任务，可以在“最近研究”面板点击历史记录，直接恢复已生成报告，不需要重新调用 LLM。
+7. 观察演示点：
 
 - Agent trace 出现 GitHub 采集、分析和报告阶段。
 - Tool trace 出现 `github_repository_collect`。
 - GitHub 技术调研看板显示识别仓库数、GitHub 工具事件数、推荐仓库和 ranking 表。
 - 最终报告包含评分总览、可复现性、架构深度、技术栈、风险和面试展示建议。
 - 报告中的事实性结论带有引用标记。
+
+## 历史记录与报告恢复
+
+前端研究页会显示“最近研究”面板，数据来源有两层：
+
+- 后端历史接口：`GET /api/v1/research/sessions?limit=20`
+- 浏览器本地缓存：`localStorage`，用于刷新页面后的演示兜底
+
+点击历史项后，前端会用 session id 调用：
+
+```text
+GET /api/v1/research/{session_id}
+```
+
+如果任务已完成，会直接恢复报告、引用和 GitHub ranking 信息；如果任务仍在运行，会重新连接 SSE 并继续轮询结果。
 
 ## API 快速评测
 

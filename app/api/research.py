@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -141,6 +141,18 @@ class ResearchResponse(BaseModel):
     requires_confirmation: bool = False
     output_length: str = "medium"
     budget: dict[str, int] = Field(default_factory=dict)
+
+
+class ResearchSessionSummary(BaseModel):
+    """Compact research session summary for history lists."""
+    session_id: str
+    query: str
+    status: str
+    created_at: str
+    updated_at: str | None = None
+    completed_at: str | None = None
+    citation_count: int = 0
+    report_preview: str | None = None
 
 
 # ==============================================================
@@ -320,6 +332,56 @@ async def get_research_status(session_id: str):
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
     )
+
+
+@router.get("/sessions", response_model=list[ResearchSessionSummary])
+async def list_research_sessions(
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """List recent research sessions for frontend history recovery."""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                s.id,
+                s.user_query,
+                s.status,
+                s.final_report,
+                s.citations,
+                s.created_at,
+                s.updated_at,
+                s.completed_at,
+                COUNT(c.id) AS stored_citation_count
+            FROM research_sessions s
+            LEFT JOIN citations c ON c.session_id = s.id
+            GROUP BY s.id
+            ORDER BY s.created_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+
+    summaries: list[ResearchSessionSummary] = []
+    for row in rows:
+        citations = _normalize_citations(row["citations"])
+        stored_citation_count = int(row["stored_citation_count"] or 0)
+        citation_count = stored_citation_count or len(citations)
+        final_report = row["final_report"] or ""
+        report_preview = final_report[:240] if final_report else None
+        summaries.append(
+            ResearchSessionSummary(
+                session_id=str(row["id"]),
+                query=row["user_query"],
+                status=row["status"],
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+                completed_at=row["completed_at"].isoformat() if row["completed_at"] else None,
+                citation_count=citation_count,
+                report_preview=report_preview,
+            )
+        )
+    return summaries
 
 
 @router.get("/{session_id}")
