@@ -16,7 +16,7 @@ building the GitHub-domain layer incrementally. Do not replace the core
 LangGraph/FastAPI/SSE/report flow until the new GitHub evidence path has its
 own tests and a minimal working API surface.
 
-Current phase: Milestone 3, GitHub Research Workflow integration.
+Current phase: Milestone 4, Demonstration and evaluation loop.
 
 ## Product Direction
 
@@ -173,6 +173,16 @@ but it must not invent scores or reorder repositories without evidence.
 - Measure citation coverage, score consistency, latency and model/token cost.
 - Prepare screenshots, architecture documentation and interview-ready examples.
 
+Current implementation order:
+
+1. Maintain one fixed GitHub Agent project comparison demo.
+2. Provide a deterministic compare API for quick scoring, ranking and
+   evaluation checks without invoking the LLM report path.
+3. Document frontend demo steps, API smoke evaluation and interview talking
+   points.
+4. Expand screenshots and additional evaluation cases only after this first
+   demo remains stable.
+
 Current frontend demonstration direction:
 
 - Provide a GitHub repository input area that can turn one or more public
@@ -183,6 +193,15 @@ Current frontend demonstration direction:
   panels visible during GitHub research runs.
 - Favor interview-demo clarity over adding a separate complex frontend route
   until the core workflow is stable.
+
+The first fixed demo task compares:
+
+- `wblxr408/DeepIntel`
+- `PavithraNagineni/multi-agent-research-system`
+- `tarun7r/deep-research-agent`
+
+The demo/evaluation assets live in `docs/DEMO_EVALUATION.md` and
+`docs/demo/github_agent_comparison_demo.json`.
 
 ## Version Control Rules
 

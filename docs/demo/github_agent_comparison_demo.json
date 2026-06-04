@@ -1,0 +1,31 @@
+{
+  "task_id": "github-agent-comparison-demo-001",
+  "title": "Agent 开源项目复刻优先级对比",
+  "repositories": [
+    "https://github.com/wblxr408/DeepIntel",
+    "https://github.com/PavithraNagineni/multi-agent-research-system",
+    "https://github.com/tarun7r/deep-research-agent"
+  ],
+  "research_prompt": "请对以下 GitHub 开源项目做技术调研、对比排序，并推荐最适合作为简历/面试复刻项目的仓库：https://github.com/wblxr408/DeepIntel https://github.com/PavithraNagineni/multi-agent-research-system https://github.com/tarun7r/deep-research-agent",
+  "evaluation_focus": [
+    "可复现性和启动成本",
+    "架构与 Agent 工作流深度",
+    "技术栈广度",
+    "可扩展性",
+    "工程质量",
+    "风险控制",
+    "最终推荐是否有证据支撑"
+  ],
+  "success_criteria": {
+    "ranking_count_min": 3,
+    "must_have_recommended_repository": true,
+    "citation_coverage_min": 0.5,
+    "must_generate_report_sections": [
+      "评分总览",
+      "可复现性与启动成本",
+      "架构与 Agent 工作流深度",
+      "风险点与补救建议",
+      "面试展示建议"
+    ]
+  }
+}
