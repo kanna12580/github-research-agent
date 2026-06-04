@@ -217,6 +217,13 @@ Keep these sample artifacts sanitized and small. They are intentionally committe
 as interview-ready examples; do not commit arbitrary generated reports or local
 runtime output.
 
+Final polish status: complete on the feature branch. The project now includes
+interview presentation material, a cleaner GitHub ranking UI, Demo prompt copy
+support, clearer GitHub token/rate-limit failure guidance, highlighted report
+score tables, cleaned sample citations and build/smoke verification. The next
+project-level step is to merge `codex/github-research-workflow-m3` into `main`
+after user confirmation.
+
 ## Version Control Rules
 
 - Use `main` as the stable integration branch.

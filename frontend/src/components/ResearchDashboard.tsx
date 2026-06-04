@@ -38,12 +38,26 @@ interface ResearchDashboardProps {
   onBack?: () => void
 }
 
+const DEMO_GITHUB_URLS = [
+  'https://github.com/wblxr408/DeepIntel',
+  'https://github.com/PavithraNagineni/multi-agent-research-system',
+  'https://github.com/tarun7r/deep-research-agent',
+]
+
+const buildGithubResearchPrompt = (urls: string[]): string => {
+  if (urls.length === 1) {
+    return `请对这个 GitHub 开源项目做技术调研报告，重点分析可复现性、架构与 Agent 工作流深度、技术栈广度、可扩展性、工程质量和风险：${urls[0]}`
+  }
+  return `请对以下 GitHub 开源项目做技术调研、对比排序，并推荐最适合作为简历/面试复刻项目的仓库：${urls.join(' ')}`
+}
+
 function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const [query, setQuery] = useState('')
   const [ragGroup, setRagGroup] = useState('')
   const [allowWebAfterRagHit, setAllowWebAfterRagHit] = useState(false)
   const [outputLength, setOutputLength] = useState<'short' | 'medium' | 'long'>('medium')
   const [githubUrls, setGithubUrls] = useState('')
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionStatus, setSessionStatus] = useState<string | null>(null)
@@ -155,6 +169,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
     setActiveSessionId(null)
     setQuery('')
     setGithubUrls('')
+    setCopyStatus('idle')
     setRagGroup('')
     setSessionStatus(null)
     clearEvents()
@@ -167,12 +182,27 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
       .map(item => item.trim())
       .filter(Boolean)
     if (urls.length === 0) return
-    const task = urls.length === 1
-      ? `请对这个 GitHub 开源项目做技术调研报告，重点分析可复现性、架构与 Agent 工作流深度、技术栈广度、可扩展性、工程质量和风险：${urls[0]}`
-      : `请对以下 GitHub 开源项目做技术调研、对比排序，并推荐最适合作为简历/面试复刻项目的仓库：${urls.join(' ')}`
-    setQuery(task)
+    setQuery(buildGithubResearchPrompt(urls))
     setOutputLength(urls.length > 1 ? 'long' : 'medium')
   }, [githubUrls])
+
+  const handleUseDemoUrls = useCallback(() => {
+    setGithubUrls(DEMO_GITHUB_URLS.join('\n'))
+    setCopyStatus('idle')
+  }, [])
+
+  const handleCopyDemoPrompt = useCallback(async () => {
+    const prompt = buildGithubResearchPrompt(DEMO_GITHUB_URLS)
+    setQuery(prompt)
+    setGithubUrls(DEMO_GITHUB_URLS.join('\n'))
+    setOutputLength('long')
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopyStatus('copied')
+    } catch {
+      setCopyStatus('failed')
+    }
+  }, [])
 
   const displayReport = streamedReport || result?.report || ''
   const normalizedCitations = Array.isArray(result?.citations) ? result.citations : []
@@ -182,17 +212,21 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
   const canRefetchResult = Boolean(activeSessionId)
   const workflowErrorEvent = [...events].reverse().find((event: SSEvent) => event.type === 'workflow_error')
   const isFailed = sessionStatus === 'failed'
+  const workflowErrorText = String(workflowErrorEvent?.data.error || workflowErrorEvent?.data.message || '')
+  const isGithubTokenLikelyMissing = /github|rate limit|permission|403|api/i.test(workflowErrorText)
   const emptyReportTitle = isConnectingStream
     ? '正在建立研究流连接...'
     : isFailed
-      ? '研究执行失败'
+      ? isGithubTokenLikelyMissing ? 'GitHub 采集失败' : '研究执行失败'
       : sseError
       ? '实时流已中断'
       : '报告暂未生成'
   const emptyReportDescription = isConnectingStream
     ? '任务已提交，正在等待首个 Agent 事件和报告片段。'
     : isFailed
-      ? String(workflowErrorEvent?.data.error || workflowErrorEvent?.data.message || '任务执行过程中发生错误。')
+      ? isGithubTokenLikelyMissing
+        ? `GitHub API 可能触发限流或权限错误。请在 .env 中配置 GITHUB_TOKEN，然后执行 docker compose up -d --force-recreate api。原始错误：${workflowErrorText || '未知错误'}`
+        : String(workflowErrorEvent?.data.error || workflowErrorEvent?.data.message || '任务执行过程中发生错误。')
       : sseError
       ? '实时事件连接失败，但仍可继续读取已落库的研究结果。'
       : '当前任务尚未返回可展示的报告内容。'
@@ -289,10 +323,21 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setGithubUrls('https://github.com/wblxr408/DeepIntel\nhttps://github.com/PavithraNagineni/multi-agent-research-system\nhttps://github.com/tarun7r/deep-research-agent')}
+                onClick={handleUseDemoUrls}
                 className="tag hover:bg-white"
               >
                 使用三项目对比示例
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyDemoPrompt}
+                className="tag hover:bg-white"
+              >
+                {copyStatus === 'copied'
+                  ? '已复制 Demo prompt'
+                  : copyStatus === 'failed'
+                    ? '已填入，复制失败'
+                    : '复制 Demo prompt'}
               </button>
             </div>
           </div>

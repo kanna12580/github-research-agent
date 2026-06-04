@@ -256,6 +256,19 @@
   @apply py-2 border-b border-xmgray-100 text-xmgray-600;
 }
 
+.report-content tbody tr:first-child {
+  @apply bg-xm-50/70;
+}
+
+.report-content tbody tr:first-child td {
+  @apply text-xmgray-900 font-medium border-xm-100;
+}
+
+.report-content tbody tr:first-child td:first-child::before {
+  content: '推荐 ';
+  @apply mr-1 rounded-full bg-xm-100 px-2 py-0.5 text-[11px] font-semibold text-xm-700;
+}
+
 /* Citation hover */
 .citation-ref {
   @apply text-xm-600 hover:text-xm-700

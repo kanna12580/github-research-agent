@@ -77,6 +77,19 @@ function formatScore(value?: number): string {
   return value.toFixed(2)
 }
 
+function scoreBadgeClass(value?: number): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 'bg-xmgray-50 text-xmgray-400 border-xmgray-100'
+  }
+  if (value >= 8) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-100'
+  }
+  if (value >= 6) {
+    return 'bg-xm-50 text-xm-700 border-xm-100'
+  }
+  return 'bg-red-50 text-red-700 border-red-100'
+}
+
 function dimensionScore(item: RankingItem, key: string): string {
   const value = item.dimension_scores?.[key]
   return typeof value === 'number' ? String(value) : '-'
@@ -161,31 +174,42 @@ function GitHubResearchSummary({
         )}
 
         {ranking.length > 0 && (
-          <div className="overflow-x-auto rounded-2xl border border-xmgray-100">
+          <div className="overflow-x-auto rounded-2xl border border-xmgray-100 shadow-sm">
             <table className="min-w-full text-left text-xs">
-              <thead className="bg-xmgray-50 text-xmgray-500">
+              <thead className="bg-gradient-to-r from-xmgray-50 to-xm-50/40 text-xmgray-500">
                 <tr>
-                  <th className="px-3 py-2">排名</th>
-                  <th className="px-3 py-2">仓库</th>
-                  <th className="px-3 py-2">加权分</th>
-                  <th className="px-3 py-2">可复现</th>
-                  <th className="px-3 py-2">深度</th>
-                  <th className="px-3 py-2">扩展性</th>
-                  <th className="px-3 py-2">工程质量</th>
-                  <th className="px-3 py-2">建议</th>
+                  <th className="px-4 py-3">排名</th>
+                  <th className="px-4 py-3">仓库</th>
+                  <th className="px-4 py-3">加权分</th>
+                  <th className="px-4 py-3">可复现</th>
+                  <th className="px-4 py-3">深度</th>
+                  <th className="px-4 py-3">扩展性</th>
+                  <th className="px-4 py-3">工程质量</th>
+                  <th className="px-4 py-3">建议</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-xmgray-100">
                 {ranking.map(item => (
-                  <tr key={item.full_name} className={item.rank === 1 ? 'bg-xm-50/40' : 'bg-white'}>
-                    <td className="px-3 py-2 font-semibold text-xmgray-900">#{item.rank}</td>
-                    <td className="px-3 py-2 font-medium text-xmgray-800">{item.full_name}</td>
-                    <td className="px-3 py-2 text-xm-700">{formatScore(item.weighted_score)}</td>
-                    <td className="px-3 py-2">{dimensionScore(item, 'reproducibility')}</td>
-                    <td className="px-3 py-2">{dimensionScore(item, 'project_depth')}</td>
-                    <td className="px-3 py-2">{dimensionScore(item, 'extensibility')}</td>
-                    <td className="px-3 py-2">{dimensionScore(item, 'engineering_quality')}</td>
-                    <td className="px-3 py-2 text-xmgray-600">{item.recommendation || '-'}</td>
+                  <tr
+                    key={item.full_name}
+                    className={item.rank === 1 ? 'bg-xm-50/70 ring-1 ring-inset ring-xm-100' : 'bg-white'}
+                  >
+                    <td className="px-4 py-3">
+                      <span className={item.rank === 1 ? 'tag-orange font-semibold' : 'tag'}>
+                        #{item.rank}{item.rank === 1 ? ' 推荐' : ''}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-xmgray-800">{item.full_name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full border px-2 py-1 font-semibold ${scoreBadgeClass(item.weighted_score)}`}>
+                        {formatScore(item.weighted_score)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">{dimensionScore(item, 'reproducibility')}</td>
+                    <td className="px-4 py-3">{dimensionScore(item, 'project_depth')}</td>
+                    <td className="px-4 py-3">{dimensionScore(item, 'extensibility')}</td>
+                    <td className="px-4 py-3">{dimensionScore(item, 'engineering_quality')}</td>
+                    <td className="px-4 py-3 text-xmgray-600">{item.recommendation || '-'}</td>
                   </tr>
                 ))}
               </tbody>
