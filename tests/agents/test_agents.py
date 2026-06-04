@@ -293,6 +293,80 @@ class TestReportAgent:
 
         assert len(citations) == 1
 
+    def test_generate_stream_uses_github_technical_report_prompt(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.return_value = [
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="# GitHub 开源项目技术调研报告：acme/demo\n"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="## 评分总览\n"))]),
+        ]
+
+        evidence = [
+            Evidence(
+                content="Repository scorecard for acme/demo: average=7.0/10, total=42.\n- reproducibility: 8/10. Evidence.",
+                source_title="acme/demo deterministic scorecard",
+                source_url="https://github.com/acme/demo",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+            )
+        ]
+
+        report, citations = agent.generate_stream(
+            user_query="分析 https://github.com/acme/demo",
+            analysis="GitHub analysis",
+            evidence_list=evidence,
+            reflection={"overall_confidence": 0.9},
+        )
+
+        messages = agent._client.chat.completions.create.call_args.kwargs["messages"]
+        assert "GitHub 开源项目技术调研报告" in messages[0]["content"]
+        assert "评分总览" in messages[0]["content"]
+        assert "GitHub repository technical evidence" in messages[1]["content"]
+        assert report.startswith("# GitHub 开源项目技术调研报告")
+        assert citations[0].source_type == "github_repository"
+
+    def test_github_fallback_report_uses_technical_template(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.side_effect = RuntimeError("offline")
+        evidence = [
+            Evidence(
+                content=(
+                    "Repository scorecard for acme/demo: average=7.0/10, total=42.\n"
+                    "- reproducibility: 8/10. README setup guidance.\n"
+                    "- project_depth: 7/10. Repository size and docs."
+                ),
+                source_title="acme/demo deterministic scorecard",
+                source_url="https://github.com/acme/demo",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+            ),
+            Evidence(
+                content="README evidence for acme/demo: install_section=True, usage_section=True.",
+                source_title="acme/demo README",
+                source_url="https://raw.githubusercontent.com/acme/demo/main/README.md",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+            ),
+        ]
+
+        report, citations = agent.generate_stream(
+            user_query="分析 https://github.com/acme/demo",
+            analysis="GitHub analysis",
+            evidence_list=evidence,
+            reflection=None,
+        )
+
+        assert "# GitHub 开源项目技术调研报告：acme/demo" in report
+        assert "## 2. 评分总览" in report
+        assert "| acme/demo | 8/10 | 7/10" in report
+        assert "## 9. 面试展示建议" in report
+        assert len(citations) == 2
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -84,6 +84,54 @@ class ReportAgent:
 - Provide actionable, specific conclusions
 """
 
+    GITHUB_TECHNICAL_REPORT_PROMPT = """You are a senior software architect writing a Chinese technical research report for public GitHub repositories.
+
+The report must be written in Chinese and must follow this exact Markdown structure:
+
+```
+# GitHub 开源项目技术调研报告：{repository_names}
+
+## 1. 结论摘要
+{Give a direct recommendation and 2-3 key reasons.}
+
+## 2. 评分总览
+| 仓库 | 可复现性 | 项目深度 | 技术栈广度 | 可扩展性 | 工程质量 | 风险控制 | 综合判断 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+
+## 3. 可复现性与启动成本
+{Discuss README setup quality, dependency manifests, lockfiles, Docker/env hints.}
+
+## 4. 架构与 Agent 工作流深度
+{Discuss whether the repository shows workflow orchestration, modular design, agent/tool roles, and reasoning depth.}
+
+## 5. 技术栈广度
+{Discuss languages, frameworks, package managers, containers, CI and integration breadth.}
+
+## 6. 可扩展性
+{Discuss docs, examples, contribution guide, modular directory layout, topics, license.}
+
+## 7. 工程质量
+{Discuss tests, CI, Docker, license files, activity metadata and maintainability.}
+
+## 8. 风险点与补救建议
+{List risks and concrete reproduction or extension actions.}
+
+## 9. 面试展示建议
+{Explain how to present this project on a resume/interview demo.}
+
+## References
+{citation list}
+```
+
+Rules:
+
+1. Every factual statement must use [citation:N].
+2. Scores must be grounded in the deterministic scorecard evidence.
+3. Separate observed facts from your engineering judgment.
+4. If evidence is missing, say what is missing instead of inventing it.
+5. For multi-repository tasks, compare repositories explicitly in the table and final recommendation.
+"""
+
     def __init__(self):
         settings = get_settings()
         self.model = settings.llm.model
@@ -139,9 +187,16 @@ class ReportAgent:
         """
         logger.info(f"Report: generating report for query: {user_query[:80]}")
         evidence_list = self._deduplicate_evidence(evidence_list)
+        is_github_report = self._is_github_report(evidence_list)
         decision = build_guardrail_decision(user_query)
         budget = get_research_budget(output_length)
-        system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{self.SYSTEM_PROMPT}"
+        repository_names = ", ".join(self._github_repository_names(evidence_list)) or user_query
+        report_prompt = (
+            self.GITHUB_TECHNICAL_REPORT_PROMPT.replace("{repository_names}", repository_names)
+            if is_github_report
+            else self.SYSTEM_PROMPT
+        )
+        system_prompt = f"{build_prompt_profile_message(decision, user_query)}\n\n{report_prompt}"
         system_prompt += (
             f"\n\n输出长度要求：{output_length or 'medium'}。"
             f"请优先控制在约 {budget['report_max_tokens']} tokens 内。"
@@ -162,7 +217,11 @@ class ReportAgent:
         ref_list = self._build_reference_list(citations)
 
         # Format evidence for prompt
-        formatted_evidence = self._format_evidence(evidence_list, citations)
+        formatted_evidence = (
+            self._format_github_evidence(evidence_list, citations)
+            if is_github_report
+            else self._format_evidence(evidence_list, citations)
+        )
 
         # Confidence note if reflection is available
         confidence_note = ""
@@ -238,16 +297,80 @@ Make sure every factual claim has a [citation:N] reference."""
     def _deduplicate_evidence(self, evidence_list: list[Evidence]) -> list[Evidence]:
         """Keep one evidence item per source URL across revision passes."""
         unique: list[Evidence] = []
-        seen_urls: set[str] = set()
+        seen_keys: set[tuple[str, str, str]] = set()
         for evidence in evidence_list:
             source_url = (evidence.source_url or "").strip()
             url_key = source_url.casefold()
-            if url_key and url_key in seen_urls:
+            title_key = (evidence.source_title or "").strip().casefold()
+            source_type_key = evidence.source_type
+            dedupe_key = (url_key, title_key, source_type_key)
+            if url_key and dedupe_key in seen_keys:
                 continue
             if url_key:
-                seen_urls.add(url_key)
+                seen_keys.add(dedupe_key)
             unique.append(evidence)
         return unique
+
+    def _is_github_report(self, evidence_list: list[Evidence]) -> bool:
+        """Return True when the evidence set contains GitHub repository evidence."""
+        return any(ev.source_type == "github_repository" or ev.agent_type.value == "github" for ev in evidence_list)
+
+    def _github_repository_names(self, evidence_list: list[Evidence]) -> list[str]:
+        """Infer repository names from GitHub evidence titles/content."""
+        names: list[str] = []
+        seen: set[str] = set()
+        markers = (
+            " repository metadata",
+            " deterministic scorecard",
+            " README",
+            " file tree",
+            " dependency manifests",
+        )
+        for ev in evidence_list:
+            if ev.source_type != "github_repository":
+                continue
+            candidate = ev.source_title or ""
+            for marker in markers:
+                if marker in candidate:
+                    candidate = candidate.split(marker, 1)[0]
+                    break
+            if "/" not in candidate and " for " in ev.content:
+                candidate = ev.content.split(" for ", 1)[1].split(":", 1)[0].strip()
+            if "/" in candidate and candidate not in seen:
+                seen.add(candidate)
+                names.append(candidate)
+        return names
+
+    def _format_github_evidence(self, evidence_list: list[Evidence], citations: list[Citation]) -> str:
+        """Format GitHub evidence with an explicit technical report lens."""
+        lines = [
+            "GitHub repository technical evidence. Use these items to fill the Chinese technical research template.",
+            "",
+        ]
+        for i, (ev, citation) in enumerate(zip(evidence_list[:30], citations[:30]), 1):
+            source = f"{ev.source_title or 'Unknown'} - {ev.source_url}" if ev.source_url else (ev.source_title or "Unknown")
+            dimension_hint = self._github_dimension_hint(ev)
+            lines.append(
+                f"[{i}] {source}\n"
+                f"Type: {ev.source_type} | Dimension hint: {dimension_hint}\n"
+                f"{ev.content[:1200]}"
+            )
+        return "\n\n".join(lines)
+
+    def _github_dimension_hint(self, evidence: Evidence) -> str:
+        title = (evidence.source_title or "").lower()
+        content = evidence.content.lower()
+        if "scorecard" in title or "scorecard" in content:
+            return "评分总览、风险控制、综合判断"
+        if "readme" in title:
+            return "可复现性、启动成本、使用说明"
+        if "file tree" in title:
+            return "架构深度、工程质量、可扩展性"
+        if "dependency" in title:
+            return "技术栈广度、依赖与包管理"
+        if "metadata" in title:
+            return "项目成熟度、维护活跃度、风险"
+        return "通用仓库证据"
 
     def _build_citations(self, evidence_list: list[Evidence]) -> list[Citation]:
         """Build a stable citation list from collected evidence."""
@@ -313,6 +436,9 @@ Make sure every factual claim has a [citation:N] reference."""
         citations: list[Citation],
     ) -> str:
         """Generate a minimal fallback report when LLM fails."""
+        if self._is_github_report(evidence_list):
+            return self._github_fallback_report(user_query, evidence_list, citations)
+
         lines = [f"# {user_query}", "", "## 摘要", ""]
         for i, ev in enumerate(evidence_list[:10], 1):
             lines.append(f"### 来源 {i}")
@@ -325,3 +451,136 @@ Make sure every factual claim has a [citation:N] reference."""
                 url = c.source_url or ""
                 lines.append(f"[{i}] {title} - {url}")
         return "\n".join(lines)
+
+    def _github_fallback_report(
+        self,
+        user_query: str,
+        evidence_list: list[Evidence],
+        citations: list[Citation],
+    ) -> str:
+        """Generate a deterministic GitHub technical research report skeleton."""
+        repo_names = self._github_repository_names(evidence_list)
+        title_target = ", ".join(repo_names) if repo_names else user_query
+        scorecard_items = [
+            (idx, ev)
+            for idx, ev in enumerate(evidence_list[:30], 1)
+            if "scorecard" in (ev.source_title or "").lower() or "repository scorecard" in ev.content.lower()
+        ]
+        readme_items = [
+            (idx, ev)
+            for idx, ev in enumerate(evidence_list[:30], 1)
+            if "readme" in (ev.source_title or "").lower()
+        ]
+        file_tree_items = [
+            (idx, ev)
+            for idx, ev in enumerate(evidence_list[:30], 1)
+            if "file tree" in (ev.source_title or "").lower()
+        ]
+        dependency_items = [
+            (idx, ev)
+            for idx, ev in enumerate(evidence_list[:30], 1)
+            if "dependency" in (ev.source_title or "").lower()
+        ]
+        metadata_items = [
+            (idx, ev)
+            for idx, ev in enumerate(evidence_list[:30], 1)
+            if "metadata" in (ev.source_title or "").lower()
+        ]
+
+        lines = [
+            f"# GitHub 开源项目技术调研报告：{title_target}",
+            "",
+            "## 1. 结论摘要",
+            "",
+            self._github_section_summary(scorecard_items or metadata_items, "当前结论主要依据仓库元数据、README、文件树、依赖清单和确定性评分卡。"),
+            "",
+            "## 2. 评分总览",
+            "",
+            "| 仓库 | 可复现性 | 项目深度 | 技术栈广度 | 可扩展性 | 工程质量 | 风险控制 | 综合判断 |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+            *self._github_score_table_rows(scorecard_items, repo_names),
+            "",
+            "## 3. 可复现性与启动成本",
+            "",
+            self._github_section_summary(readme_items + dependency_items, "需要重点检查 README 安装说明、使用示例、环境变量、依赖清单、锁文件和 Docker 信号。"),
+            "",
+            "## 4. 架构与 Agent 工作流深度",
+            "",
+            self._github_section_summary(file_tree_items, "需要结合目录结构、核心模块、测试目录和文档目录判断项目是否具备可解释的 Agent 工作流深度。"),
+            "",
+            "## 5. 技术栈广度",
+            "",
+            self._github_section_summary(dependency_items, "技术栈广度主要由语言、包管理器、框架、容器和 CI 线索支撑。"),
+            "",
+            "## 6. 可扩展性",
+            "",
+            self._github_section_summary(file_tree_items + metadata_items, "扩展性应关注文档、示例、贡献指南、许可证、主题标签和模块化目录。"),
+            "",
+            "## 7. 工程质量",
+            "",
+            self._github_section_summary(file_tree_items + metadata_items, "工程质量应关注测试、CI、Docker、许可证文件、最近活跃度和 issue 风险。"),
+            "",
+            "## 8. 风险点与补救建议",
+            "",
+            "- 若 README 缺少完整启动步骤，应补充本地启动、Docker 启动和 API Key 配置说明。",
+            "- 若缺少测试或 CI，应优先补充核心评分逻辑、API 合约和端到端任务测试。",
+            "- 若依赖锁文件或容器配置不足，应补充可复现环境，降低面试演示时的环境风险。",
+            "",
+            "## 9. 面试展示建议",
+            "",
+            "- 展示从 GitHub URL 输入、结构化证据采集、确定性评分、引用校验到报告生成的完整链路。",
+            "- 强调评分不是直接让 LLM 主观判断，而是先采集可追溯证据，再由 LLM 负责归纳表达。",
+            "- 准备一个单仓库调研和一个多仓库对比案例，体现产品化和工程化扩展能力。",
+        ]
+
+        if citations:
+            lines.extend(["", "---", "", "## References", "", self._build_reference_list(citations)])
+
+        return "\n".join(lines)
+
+    def _github_section_summary(self, indexed_items: list[tuple[int, Evidence]], default_text: str) -> str:
+        if not indexed_items:
+            return f"{default_text} 当前证据不足，需要后续采集补齐。"
+        bullets = []
+        for citation_index, evidence in indexed_items[:4]:
+            bullets.append(f"- {evidence.content[:350]} [citation:{citation_index}]")
+        return "\n".join(bullets)
+
+    def _github_score_table_rows(
+        self,
+        scorecard_items: list[tuple[int, Evidence]],
+        repo_names: list[str],
+    ) -> list[str]:
+        if not scorecard_items:
+            target = repo_names[0] if repo_names else "待识别仓库"
+            return [f"| {target} | 待评分 | 待评分 | 待评分 | 待评分 | 待评分 | 待评分 | 需要补充 scorecard 证据 |"]
+
+        rows = []
+        for citation_index, evidence in scorecard_items:
+            repo_name = self._github_repository_names([evidence])
+            scores = self._extract_scorecard_scores(evidence.content)
+            rows.append(
+                "| {repo} | {repro} | {depth} | {stack} | {ext} | {quality} | {risk} | 基于确定性评分卡，需结合 README 和工程证据解释 [citation:{citation}] |".format(
+                    repo=repo_name[0] if repo_name else evidence.source_title or "GitHub repository",
+                    repro=scores.get("reproducibility", "待评分"),
+                    depth=scores.get("project_depth", "待评分"),
+                    stack=scores.get("stack_breadth", "待评分"),
+                    ext=scores.get("extensibility", "待评分"),
+                    quality=scores.get("engineering_quality", "待评分"),
+                    risk=scores.get("risk_control", "待评分"),
+                    citation=citation_index,
+                )
+            )
+        return rows
+
+    def _extract_scorecard_scores(self, content: str) -> dict[str, str]:
+        scores: dict[str, str] = {}
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- ") or ":" not in stripped:
+                continue
+            name, rest = stripped[2:].split(":", 1)
+            score = rest.strip().split(".", 1)[0].strip()
+            if "/10" in score:
+                scores[name.strip()] = score
+        return scores

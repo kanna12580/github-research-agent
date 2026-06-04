@@ -135,7 +135,9 @@ Current implementation order:
    with provenance URLs.
 4. Preserve GitHub repositories, evidence bundles and scorecards in workflow
    state for future comparison UI and verification work.
-5. Add single-repository workflow tests before adding multi-repository ranking.
+5. Template GitHub technical research reports so repository tasks no longer use
+   the generic business research report structure.
+6. Add single-repository workflow tests before adding multi-repository ranking.
 
 Current technical additions:
 
@@ -144,10 +146,15 @@ Current technical additions:
   and report path
 - GitHub repository state fields: repositories, evidence bundles and scorecards
 - guardrail registration for read-only GitHub repository collection
+- Chinese GitHub technical report template with sections for reproducibility,
+  architecture and Agent workflow depth, stack breadth, extensibility,
+  engineering quality, risks and interview presentation advice
+- deterministic GitHub fallback report skeleton for offline or failed LLM runs
 
-Do not build a new report pipeline yet. First make the existing research task
-entrypoint reliably produce a cited GitHub technical research report from one
-public repository URL.
+Do not build a separate report pipeline yet. The existing research task
+entrypoint should reliably produce a cited GitHub technical research report
+from one public repository URL, and then extend toward multi-repository
+comparison.
 
 ### Milestone 4: Demonstration And Evaluation
 
