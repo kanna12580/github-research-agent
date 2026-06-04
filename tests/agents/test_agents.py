@@ -1,0 +1,372 @@
+"""
+Tests for individual agent implementations.
+"""
+
+import asyncio
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.graph.state import PlanStep, StepStatus, Evidence, AgentType
+
+
+class TestPlannerAgent:
+    def test_planner_import(self):
+        from app.agents.planner import PlannerAgent
+        agent = PlannerAgent()
+        assert agent is not None
+
+    def test_fallback_plan_generation(self):
+        from app.agents.planner import PlannerAgent
+
+        agent = PlannerAgent()
+        # Mock the client to fail
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.side_effect = Exception("API Error")
+
+        steps = agent.create_plan("中国新能源车市场分析")
+        assert len(steps) == 4
+        assert all(s["status"] == StepStatus.PENDING for s in steps)
+        # Should have one of each agent type
+        agent_types = {s.get("assigned_agent") or s.get("node_type") for s in steps}
+        assert "search" in agent_types
+        assert "browser" in agent_types
+        assert "rag" in agent_types
+        assert "analyst" in agent_types
+
+    def test_fact_lookup_uses_minimal_dag(self):
+        from app.agents.planner import PlannerAgent
+
+        dag = PlannerAgent().create_dag("量子计算是什么")
+
+        assert len(dag.nodes) == 3
+        assert [node.node_type for node in dag.nodes] == ["rag", "search", "analyst"]
+
+
+class TestSearchAgent:
+    def test_search_agent_import(self):
+        from app.agents.search import SearchAgent
+        agent = SearchAgent()
+        assert agent is not None
+
+    def test_execute_search_uses_ten_second_timeout(self, monkeypatch):
+        from app.agents.search import SearchAgent
+
+        captured = {"timeouts": []}
+
+        def fake_get(url, params=None, timeout=None, headers=None):
+            captured["timeouts"].append(timeout)
+
+            class _Response:
+                status_code = 200
+                text = ""
+
+                def json(self):
+                    return {}
+
+            return _Response()
+
+        monkeypatch.setattr("requests.get", fake_get)
+
+        agent = SearchAgent()
+        result = agent._execute_search("test query")
+
+        assert captured["timeouts"] == [10, 10]
+        assert result == []
+
+    def test_parse_duckduckgo_html_results(self):
+        from app.agents.search import SearchAgent
+
+        html = '''
+        <div class="result">
+          <div class="result__body">
+            <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdoc">Example &amp; Title</a>
+            <a class="result__snippet">Useful snippet about the topic.</a>
+          </div>
+        </div>
+        '''
+
+        results = SearchAgent()._parse_duckduckgo_html(html, "topic")
+
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/doc"
+        assert results[0].title == "Example & Title"
+
+    def test_deduplication(self):
+        from app.agents.search import SearchAgent, SearchResult
+
+        agent = SearchAgent()
+        results = [
+            SearchResult(url="https://example.com/1", title="A", snippet="x", relevance_score=0.5),
+            SearchResult(url="https://example.com/1", title="A", snippet="x", relevance_score=0.8),
+            SearchResult(url="https://example.com/2", title="B", snippet="y", relevance_score=0.6),
+        ]
+        deduped = agent._deduplicate(results)
+        assert len(deduped) == 2
+        # Should keep the one with higher score
+        assert next(r for r in deduped if r.url == "https://example.com/1").relevance_score == 0.8
+
+
+class TestBrowserAgent:
+    def test_browser_agent_import(self):
+        from app.agents.browser import BrowserAgent
+        agent = BrowserAgent()
+        assert agent is not None
+
+    def test_page_classification(self):
+        from app.agents.browser import BrowserAgent, PageType
+        from unittest.mock import MagicMock
+
+        agent = BrowserAgent()
+
+        # News article
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://news.example.com/article/123"))
+        assert result == PageType.NEWS_ARTICLE
+
+        # GitHub
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://github.com/user/repo"))
+        assert result == PageType.TECHNICAL
+
+        # Search result
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://www.google.com/search?q=AI"))
+        assert result == PageType.SEARCH_RESULT
+
+        # Social
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://zhihu.com/question/123"))
+        assert result == PageType.SOCIAL
+
+        # General
+        result = asyncio.run(agent._classify_page(MagicMock(), "https://example.com/page"))
+        assert result == PageType.GENERAL
+
+    def test_fallback_result(self):
+        from app.agents.browser import BrowserAgent
+
+        agent = BrowserAgent()
+        result = agent._fallback_result("https://failed.com")
+        assert result.url == "https://failed.com"
+        assert result.extracted_content == ""
+        assert len(result.citations) == 0
+
+    def test_resolve_target_extracts_embedded_url(self):
+        from app.agents.browser import BrowserAgent
+
+        agent = BrowserAgent()
+
+        assert agent._resolve_target(
+            "Read official source: https://github.com/langchain-ai/langgraph."
+        ) == "https://github.com/langchain-ai/langgraph"
+
+
+class TestRAGAgent:
+    def test_rag_agent_import(self):
+        from app.agents.rag import RAGAgent
+        agent = RAGAgent()
+        assert agent is not None
+
+    @pytest.mark.asyncio
+    async def test_empty_knowledge_base_skips_local_model_loading(self):
+        from app.agents.rag import RAGAgent
+
+        agent = RAGAgent()
+        pool = MagicMock()
+        agent._get_db_pool = AsyncMock(return_value=pool)
+        agent._has_documents = AsyncMock(return_value=False)
+        agent._get_embedder = AsyncMock(side_effect=AssertionError("embedder should not load"))
+        agent._get_reranker = AsyncMock(side_effect=AssertionError("reranker should not load"))
+
+        results = await agent.execute_async([], "query")
+
+        assert results == []
+        agent._get_embedder.assert_not_awaited()
+        agent._get_reranker.assert_not_awaited()
+
+
+class TestAnalystAgent:
+    def test_analyst_import(self):
+        from app.agents.analyst import AnalystAgent
+        agent = AnalystAgent()
+        assert agent is not None
+
+    def test_evidence_formatting(self):
+        from app.agents.analyst import AnalystAgent, Evidence
+
+        agent = AnalystAgent()
+        evidence = [
+            Evidence(
+                content="这是测试内容的一部分",
+                source_title="测试来源",
+                source_url="https://test.com",
+                source_type="web",
+                collected_by=AgentType.SEARCH,
+            )
+        ]
+        formatted = agent._format_evidence(evidence)
+        assert "测试来源" in formatted
+        assert "这是测试内容的一部分" in formatted
+
+
+class TestReflectionAgent:
+    def test_reflection_import(self):
+        from app.agents.reflection import ReflectionAgent
+        agent = ReflectionAgent()
+        assert agent is not None
+
+    def test_default_result(self):
+        from app.agents.reflection import ReflectionAgent
+
+        agent = ReflectionAgent()
+        result = agent._default_result()
+        assert result.overall_confidence == 0.0
+        assert result.needs_revision is True
+        assert "Reflection validation failed" in (result.revision_focus or "")
+        assert len(result.hallucinated_claims) == 0
+
+
+class TestReportAgent:
+    def test_report_import(self):
+        from app.agents.report import ReportAgent
+        agent = ReportAgent()
+        assert agent is not None
+
+    def test_generate_stream_emits_chunks_and_citations(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.return_value = [
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="# Title\n"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="Body [citation:1]"))]),
+        ]
+
+        chunks = []
+        citations = []
+        report, report_citations = agent.generate_stream(
+            user_query="Test topic",
+            analysis="Test analysis",
+            evidence_list=[
+                Evidence(
+                    content="Evidence body",
+                    source_title="Source 1",
+                    source_url="https://example.com",
+                    source_type="web",
+                    collected_by=AgentType.SEARCH,
+                )
+            ],
+            reflection={"overall_confidence": 0.9},
+            on_chunk=chunks.append,
+            on_citation=citations.append,
+        )
+
+        assert report.startswith("# Title")
+        assert len(chunks) >= 2
+        assert len(citations) == 1
+        assert len(report_citations) == 1
+
+    def test_generate_stream_deduplicates_repeated_source_urls(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.side_effect = RuntimeError("offline")
+        repeated_source = [
+            Evidence(
+                content="First pass evidence",
+                source_title="Source",
+                source_url="https://example.com/source",
+                source_type="web",
+                collected_by=AgentType.BROWSER,
+            ),
+            Evidence(
+                content="Second pass evidence",
+                source_title="Source",
+                source_url="https://example.com/source",
+                source_type="web",
+                collected_by=AgentType.BROWSER,
+            ),
+        ]
+
+        _, citations = agent.generate_stream(
+            user_query="Test topic",
+            analysis="Test analysis",
+            evidence_list=repeated_source,
+            reflection=None,
+        )
+
+        assert len(citations) == 1
+
+    def test_generate_stream_uses_github_technical_report_prompt(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.return_value = [
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="# GitHub 开源项目技术调研报告：acme/demo\n"))]),
+            MagicMock(choices=[MagicMock(delta=MagicMock(content="## 评分总览\n"))]),
+        ]
+
+        evidence = [
+            Evidence(
+                content="Repository scorecard for acme/demo: average=7.0/10, total=42.\n- reproducibility: 8/10. Evidence.",
+                source_title="acme/demo deterministic scorecard",
+                source_url="https://github.com/acme/demo",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+            )
+        ]
+
+        report, citations = agent.generate_stream(
+            user_query="分析 https://github.com/acme/demo",
+            analysis="GitHub analysis",
+            evidence_list=evidence,
+            reflection={"overall_confidence": 0.9},
+        )
+
+        messages = agent._client.chat.completions.create.call_args.kwargs["messages"]
+        assert "GitHub 开源项目技术调研报告" in messages[0]["content"]
+        assert "评分总览" in messages[0]["content"]
+        assert "GitHub repository technical evidence" in messages[1]["content"]
+        assert report.startswith("# GitHub 开源项目技术调研报告")
+        assert citations[0].source_type == "github_repository"
+
+    def test_github_fallback_report_uses_technical_template(self):
+        from app.agents.report import ReportAgent
+
+        agent = ReportAgent()
+        agent._client = MagicMock()
+        agent._client.chat.completions.create.side_effect = RuntimeError("offline")
+        evidence = [
+            Evidence(
+                content=(
+                    "Repository scorecard for acme/demo: average=7.0/10, total=42.\n"
+                    "- reproducibility: 8/10. README setup guidance.\n"
+                    "- project_depth: 7/10. Repository size and docs."
+                ),
+                source_title="acme/demo deterministic scorecard",
+                source_url="https://github.com/acme/demo",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+            ),
+            Evidence(
+                content="README evidence for acme/demo: install_section=True, usage_section=True.",
+                source_title="acme/demo README",
+                source_url="https://raw.githubusercontent.com/acme/demo/main/README.md",
+                source_type="github_repository",
+                collected_by=AgentType.GITHUB,
+            ),
+        ]
+
+        report, citations = agent.generate_stream(
+            user_query="分析 https://github.com/acme/demo",
+            analysis="GitHub analysis",
+            evidence_list=evidence,
+            reflection=None,
+        )
+
+        assert "# GitHub 开源项目技术调研报告：acme/demo" in report
+        assert "## 2. 评分总览" in report
+        assert "| acme/demo | 8/10 | 7/10" in report
+        assert "## 9. 面试展示建议" in report
+        assert len(citations) == 2
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

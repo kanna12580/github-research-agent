@@ -1,0 +1,273 @@
+﻿[
+    {
+        "citation_id":  "citation:1",
+        "source_url":  "https://api.github.com/repos/wblxr408/DeepIntel",
+        "source_title":  "wblxr408/DeepIntel repository metadata",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "GitHub repository metadata for wblxr408/DeepIntel: description=基于 LangGraph 的自主研究 Agent 平台，强调可执行 DAG、多 Agent 协作、SSE 流式输出、RAG 检索和反思校验。, language=Python, stars=5, forks=0, open_issues=0, license=N/A, archived=False, default_branch=main, updated_at=2026-06-01 09:16:34+00:00, pushed_at=2026-05-30 07:45:",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:2",
+        "source_url":  "https://github.com/wblxr408/DeepIntel",
+        "source_title":  "wblxr408/DeepIntel deterministic scorecard",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Repository scorecard for wblxr408/DeepIntel: average=7.0/10, total=42.\n- reproducibility: 10/10. README setup guidance, dependency manifests, lockfiles and Docker signals are used as reproducibility evidence. Evidence: https://raw.githubusercontent.com/wblxr408/Agentic-Deep-Research-System/main/READ",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:3",
+        "source_url":  "https://raw.githubusercontent.com/wblxr408/Agentic-Deep-Research-System/main/README.md",
+        "source_title":  "wblxr408/DeepIntel README",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "README evidence for wblxr408/DeepIntel: install_section=True, usage_section=True, quickstart_section=False, docker_reference=True, env_reference=True.\n\nREADME excerpt:\n# Agentic Deep Research System (ADRS)\n\n\u003e 基于 LangGraph 的自主研究 Agent 平台，强调可执行 DAG、多 Agent 协作、SSE 流式输出、RAG 检索和反思校验。\n\n## 项目定位\n\n这个仓库是一个可展示",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:4",
+        "source_url":  "https://api.github.com/repos/wblxr408/DeepIntel/git/trees/main?recursive=1",
+        "source_title":  "wblxr408/DeepIntel file tree",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Repository file tree signals for wblxr408/DeepIntel: files_sampled=227, directories=[\u0027app\u0027, \u0027docs\u0027, \u0027frontend\u0027, \u0027metrics\u0027, \u0027scripts\u0027, \u0027tests\u0027], key_files=[\u0027Dockerfile\u0027, \u0027README.md\u0027, \u0027docker-compose.yml\u0027, \u0027frontend/Dockerfile\u0027, \u0027frontend/package-lock.json\u0027, \u0027frontend/package.json\u0027, \u0027metrics/browser_a",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:5",
+        "source_url":  "https://api.github.com/repos/wblxr408/DeepIntel/git/trees/main?recursive=1",
+        "source_title":  "wblxr408/DeepIntel dependency manifests",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Dependency and stack signals for wblxr408/DeepIntel: manifests=[\u0027Dockerfile\u0027, \u0027docker-compose.yml\u0027, \u0027frontend/Dockerfile\u0027, \u0027frontend/package-lock.json\u0027, \u0027frontend/package.json\u0027, \u0027requirements.txt\u0027], languages=[\u0027Container\u0027, \u0027JavaScript/TypeScript\u0027, \u0027Python\u0027], package_managers=[\u0027docker\u0027, \u0027docker compo",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:6",
+        "source_url":  "https://api.github.com/repos/PavithraNagineni/multi-agent-research-system",
+        "source_title":  "PavithraNagineni/multi-agent-research-system repository metadata",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "GitHub repository metadata for PavithraNagineni/multi-agent-research-system: description=Autonomous multi-agent research pipeline using LangGraph, LangChain, FastAPI \u0026 MLflow — Researcher, Critic and Writer agents collaborate to generate structured reports, language=Python, stars=2, forks=2, open_is",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:7",
+        "source_url":  "https://github.com/PavithraNagineni/multi-agent-research-system",
+        "source_title":  "PavithraNagineni/multi-agent-research-system deterministic scorecard",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Repository scorecard for PavithraNagineni/multi-agent-research-system: average=6.17/10, total=37.\n- reproducibility: 10/10. README setup guidance, dependency manifests, lockfiles and Docker signals are used as reproducibility evidence. Evidence: https://raw.githubusercontent.com/PavithraNagineni/mul",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:8",
+        "source_url":  "https://raw.githubusercontent.com/PavithraNagineni/multi-agent-research-system/main/README.md",
+        "source_title":  "PavithraNagineni/multi-agent-research-system README",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "README evidence for PavithraNagineni/multi-agent-research-system: install_section=True, usage_section=True, quickstart_section=False, docker_reference=True, env_reference=True.\n\nREADME excerpt:\n# Multi-Agent Research System\r\n\r\nAn autonomous research pipeline built with **LangChain**, **LangGraph**, ",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:9",
+        "source_url":  "https://api.github.com/repos/PavithraNagineni/multi-agent-research-system/git/trees/main?recursive=1",
+        "source_title":  "PavithraNagineni/multi-agent-research-system file tree",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Repository file tree signals for PavithraNagineni/multi-agent-research-system: files_sampled=107, directories=[\u0027agents\u0027, \u0027api\u0027, \u0027mlartifacts\u0027, \u0027mlruns\u0027, \u0027state\u0027, \u0027tests\u0027, \u0027tools\u0027], key_files=[\u0027Dockerfile\u0027, \u0027README.md\u0027, \u0027docker-compose.yml\u0027, \u0027requirements.txt\u0027], has_tests=True, has_ci=False, has_dock",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:10",
+        "source_url":  "https://api.github.com/repos/PavithraNagineni/multi-agent-research-system/git/trees/main?recursive=1",
+        "source_title":  "PavithraNagineni/multi-agent-research-system dependency manifests",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Dependency and stack signals for PavithraNagineni/multi-agent-research-system: manifests=[\u0027Dockerfile\u0027, \u0027docker-compose.yml\u0027, \u0027requirements.txt\u0027], languages=[\u0027Container\u0027, \u0027Python\u0027], package_managers=[\u0027docker\u0027, \u0027docker compose\u0027, \u0027pip\u0027], frameworks=[\u0027Docker\u0027, \u0027Python\u0027], has_lockfile=False.",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:11",
+        "source_url":  "https://api.github.com/repos/tarun7r/deep-research-agent",
+        "source_title":  "tarun7r/deep-research-agent repository metadata",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "GitHub repository metadata for tarun7r/deep-research-agent: description=Multi-agent autonomous research system using LangGraph and LangChain. Generates citation-backed reports with credibility scoring and web search, language=Python, stars=171, forks=29, open_issues=3, license=MIT, archived=False, d",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:12",
+        "source_url":  "https://github.com/tarun7r/deep-research-agent",
+        "source_title":  "tarun7r/deep-research-agent deterministic scorecard",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Repository scorecard for tarun7r/deep-research-agent: average=5.0/10, total=30.\n- reproducibility: 9/10. README setup guidance, dependency manifests, lockfiles and Docker signals are used as reproducibility evidence. Evidence: https://raw.githubusercontent.com/tarun7r/deep-research-agent/main/README",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:13",
+        "source_url":  "https://raw.githubusercontent.com/tarun7r/deep-research-agent/main/README.md",
+        "source_title":  "tarun7r/deep-research-agent README",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "README evidence for tarun7r/deep-research-agent: install_section=True, usage_section=True, quickstart_section=True, docker_reference=False, env_reference=True.\n\nREADME excerpt:\n# Deep Research Agent\n\n[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloa",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:14",
+        "source_url":  "https://api.github.com/repos/tarun7r/deep-research-agent/git/trees/main?recursive=1",
+        "source_title":  "tarun7r/deep-research-agent file tree",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Repository file tree signals for tarun7r/deep-research-agent: files_sampled=30, directories=[\u0027assets\u0027, \u0027src\u0027], key_files=[\u0027LICENSE\u0027, \u0027README.md\u0027, \u0027pyproject.toml\u0027, \u0027requirements.txt\u0027], has_tests=False, has_ci=False, has_docker=False, has_docs=False, has_examples=False, has_license_file=True, has_con",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:15",
+        "source_url":  "https://api.github.com/repos/tarun7r/deep-research-agent/git/trees/main?recursive=1",
+        "source_title":  "tarun7r/deep-research-agent dependency manifests",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "Dependency and stack signals for tarun7r/deep-research-agent: manifests=[\u0027pyproject.toml\u0027, \u0027requirements.txt\u0027], languages=[\u0027Python\u0027], package_managers=[\u0027pip\u0027, \u0027pip/poetry\u0027], frameworks=[\u0027Python\u0027], has_lockfile=False.",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:16",
+        "source_url":  "https://raw.githubusercontent.com/wblxr408/Agentic-Deep-Research-System/main/README.md",
+        "source_title":  "GitHub repository comparison ranking",
+        "source_type":  "github_repository",
+        "extracted_evidence":  "GitHub repository comparison ranking for resume/interview reproduction suitability.\nRecommended repository: wblxr408/DeepIntel.\nwblxr408/DeepIntel ranks first with weighted score 6.90/10, ahead of PavithraNagineni/multi-agent-research-system at 5.95/10. The ranking emphasizes reproducibility, projec",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:17",
+        "source_url":  "https://github.com/wblxr408/DeepIntel",
+        "source_title":  "GitHub - wblxr408/DeepIntel: AI端到端抓取分析工作流",
+        "source_type":  "web",
+        "extracted_evidence":  "GitHub - wblxr408/DeepIntel: AI端到端抓取分析工作流: GitHub - wblxr408/DeepIntel: AI端到端抓取分析工作流",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:18",
+        "source_url":  "https://github.com/wblxr408/",
+        "source_title":  "wblxr408 (Bo Wang) Â· GitHub",
+        "source_type":  "web",
+        "extracted_evidence":  "wblxr408 (Bo Wang) Â· GitHub: wblxr408 (Bo Wang) Â· GitHub",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:19",
+        "source_url":  "https://www.star-history.com/",
+        "source_title":  "GitHub Star History — Track \u0026 Compare Open Source Star Growth",
+        "source_type":  "web",
+        "extracted_evidence":  "GitHub Star History — Track \u0026 Compare Open Source Star Growth: GitHub Star History — Track \u0026 Compare Open Source Star Growth",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:20",
+        "source_url":  "https://yuxiaopeng.com/Github-Ranking-AI/",
+        "source_title":  "Github Ranking AI | Github-Ranking-AI",
+        "source_type":  "web",
+        "extracted_evidence":  "Github Ranking AI | Github-Ranking-AI: Github Ranking AI | Github-Ranking-AI",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:21",
+        "source_url":  "https://ossinsight.io/",
+        "source_title":  "OSSInsight — AI Agent Analytics \u0026 Open Source GitHub Intelligence",
+        "source_type":  "web",
+        "extracted_evidence":  "OSSInsight — AI Agent Analytics \u0026 Open Source GitHub Intelligence: OSSInsight — AI Agent Analytics \u0026 Open Source GitHub Intelligence",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:22",
+        "source_url":  "https://evanli.github.io/Github-Ranking/",
+        "source_title":  "Github Ranking",
+        "source_type":  "web",
+        "extracted_evidence":  "Github Ranking: Github Ranking",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:23",
+        "source_url":  "https://evanli.github.io/Github-Ranking/Top100/Top-100-stars.html",
+        "source_title":  "Github Ranking | Github-Ranking",
+        "source_type":  "web",
+        "extracted_evidence":  "Github Ranking | Github-Ranking: Github Ranking | Github-Ranking",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:24",
+        "source_url":  "https://githublb.vercel.app/",
+        "source_title":  "GitHub Stars Leaderboard",
+        "source_type":  "web",
+        "extracted_evidence":  "GitHub Stars Leaderboard: GitHub Stars Leaderboard",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:25",
+        "source_url":  "https://apify.com/ryanclinton/github-repo-search",
+        "source_title":  "GitHub Repo Search API: Stars, Forks \u0026 Language Data Â· Apify",
+        "source_type":  "web",
+        "extracted_evidence":  "GitHub Repo Search API: Stars, Forks \u0026 Language Data Â· Apify: GitHub Repo Search API: Stars, Forks \u0026 Language Data Â· Apify",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:26",
+        "source_url":  "https://git-history.com/",
+        "source_title":  "Git History - Visualize GitHub Repos \u0026 Star History",
+        "source_type":  "web",
+        "extracted_evidence":  "Git History - Visualize GitHub Repos \u0026 Star History: Git History - Visualize GitHub Repos \u0026 Star History",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:27",
+        "source_url":  "https://github.com/PavithraNagineni/multi-agent-research-system",
+        "source_title":  "PavithraNagineni/multi-agent-research-system - GitHub",
+        "source_type":  "web",
+        "extracted_evidence":  "PavithraNagineni/multi-agent-research-system - GitHub: PavithraNagineni/multi-agent-research-system - GitHub",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:28",
+        "source_url":  "https://github.blog/open-source/maintainers/from-mcp-to-multi-agents-the-top-10-open-source-ai-projects-on-github-right-now-and-why-they-matter/",
+        "source_title":  "From MCP to multi-agents: The top 10 new open source ... - The GitHub Blog",
+        "source_type":  "web",
+        "extracted_evidence":  "From MCP to multi-agents: The top 10 new open source ... - The GitHub Blog: From MCP to multi-agents: The top 10 new open source ... - The GitHub Blog",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:29",
+        "source_url":  "https://flowith.io/blog/10-best-open-source-agent-projects-github-2026/",
+        "source_title":  "10 Best Open Source Agent Projects to Star on GitHub (2026)",
+        "source_type":  "web",
+        "extracted_evidence":  "10 Best Open Source Agent Projects to Star on GitHub (2026): 10 Best Open Source Agent Projects to Star on GitHub (2026)",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    },
+    {
+        "citation_id":  "citation:30",
+        "source_url":  "https://www.analyticsvidhya.com/blog/2026/05/solved-agentic-ai-projects-with-github-links/",
+        "source_title":  "15+ Solved Agentic AI Projects with Github Links",
+        "source_type":  "web",
+        "extracted_evidence":  "15+ Solved Agentic AI Projects with Github Links: 15+ Solved Agentic AI Projects with Github Links",
+        "relevance_score":  0.5,
+        "access_timestamp":  "2026-06-04T08:38:46.881305"
+    }
+]
+
