@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import Any, AsyncGenerator
@@ -39,6 +40,9 @@ ACCUMULATING_STATE_KEYS = {
     "rag_results",
     "aggregated_evidence",
 }
+
+MOJIBAKE_CONTROL_RE = re.compile(r"[\u0080-\u009f]")
+MOJIBAKE_MARKERS = ("Ã", "Â", "â", "å", "æ", "ç", "è", "é", "ä", "ã", "ï")
 
 KNOWN_STATE_KEYS = {
     "task_id",
@@ -98,6 +102,55 @@ def _normalize_citations(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         return [value]
     return []
+
+
+def _mojibake_badness(text: str) -> int:
+    return sum(text.count(marker) for marker in MOJIBAKE_MARKERS) + len(MOJIBAKE_CONTROL_RE.findall(text))
+
+
+def _repair_mojibake_text(value: Any) -> Any:
+    """Repair UTF-8 text that was accidentally decoded as Latin-1/CP1252."""
+    if not isinstance(value, str) or not value:
+        return value
+    if _mojibake_badness(value) == 0:
+        return value
+
+    def flush_segment(segment: list[str]) -> str:
+        text = "".join(segment)
+        if _mojibake_badness(text) == 0:
+            return text
+        try:
+            repaired = bytes(ord(char) for char in text).decode("utf-8")
+        except UnicodeDecodeError:
+            return text
+        if _mojibake_badness(repaired) < _mojibake_badness(text):
+            return repaired
+        return text
+
+    repaired_parts: list[str] = []
+    segment: list[str] = []
+    for char in value:
+        if ord(char) <= 0xFF:
+            segment.append(char)
+            continue
+        if segment:
+            repaired_parts.append(flush_segment(segment))
+            segment = []
+        repaired_parts.append(char)
+    if segment:
+        repaired_parts.append(flush_segment(segment))
+
+    repaired = "".join(repaired_parts)
+    if _mojibake_badness(repaired) < _mojibake_badness(value):
+        return repaired
+    return value
+
+
+def _repair_citation_text(citation: dict[str, Any]) -> dict[str, Any]:
+    repaired = dict(citation)
+    for key in ("source_title", "extracted_evidence"):
+        repaired[key] = _repair_mojibake_text(repaired.get(key))
+    return repaired
 
 
 # ==============================================================
@@ -367,7 +420,7 @@ async def list_research_sessions(
         citations = _normalize_citations(row["citations"])
         stored_citation_count = int(row["stored_citation_count"] or 0)
         citation_count = stored_citation_count or len(citations)
-        final_report = row["final_report"] or ""
+        final_report = _repair_mojibake_text(row["final_report"] or "")
         report_preview = final_report[:240] if final_report else None
         summaries.append(
             ResearchSessionSummary(
@@ -411,13 +464,17 @@ async def get_research_result(session_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    citations = [dict(citation) for citation in citation_rows] if citation_rows else _normalize_citations(row["citations"])
+    citations = (
+        [_repair_citation_text(dict(citation)) for citation in citation_rows]
+        if citation_rows
+        else [_repair_citation_text(citation) for citation in _normalize_citations(row["citations"])]
+    )
 
     return {
         "session_id": str(row["id"]),
         "query": row["user_query"],
         "status": row["status"],
-        "report": row["final_report"],
+        "report": _repair_mojibake_text(row["final_report"]),
         "citations": citations,
         "agent_trace": row["agent_trace"],
         "created_at": row["created_at"].isoformat(),

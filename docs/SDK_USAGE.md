@@ -139,11 +139,14 @@ $body = @{
   rag_group = $null
 } | ConvertTo-Json
 
-$task = Invoke-RestMethod `
+$taskResponse = Invoke-WebRequest `
+  -UseBasicParsing `
   -Uri "http://localhost:8000/api/v1/research" `
   -Method Post `
-  -ContentType "application/json" `
-  -Body $body
+  -ContentType "application/json; charset=utf-8" `
+  -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
+
+$task = [System.Text.Encoding]::UTF8.GetString($taskResponse.RawContentStream.ToArray()) | ConvertFrom-Json
 
 $task.session_id
 ```
@@ -155,7 +158,8 @@ $sid = "替换为上一步 session_id"
 
 do {
   Start-Sleep -Seconds 10
-  $result = Invoke-RestMethod -Uri "http://localhost:8000/api/v1/research/$sid" -Method Get
+  $resultResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:8000/api/v1/research/$sid" -Method Get
+  $result = [System.Text.Encoding]::UTF8.GetString($resultResponse.RawContentStream.ToArray()) | ConvertFrom-Json
   "status=$($result.status), citations=$($result.citations.Count)"
 } while ($result.status -eq "running")
 
@@ -168,6 +172,8 @@ $result.report
 Set-Content -Path "docs/demo/sample_report.md" -Value $result.report -Encoding UTF8
 $result.citations | ConvertTo-Json -Depth 12 | Set-Content -Path "docs/demo/sample_citations.json" -Encoding UTF8
 ```
+
+如果使用 Windows PowerShell 5，优先使用上面的 `Invoke-WebRequest + UTF8.GetString(...)` 写法；不要直接用 `Invoke-RestMethod` 保存中文报告，否则在缺少 charset 的旧响应或代理场景下可能把 UTF-8 内容误解码成本地 ANSI，导致样例文件乱码。PowerShell 7 对 UTF-8 的默认处理更稳定。
 
 ## 7. 查询历史研究任务
 

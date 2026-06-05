@@ -258,6 +258,13 @@ class TestResearchResultNormalization:
             }
         ]
 
+    def test_repair_mojibake_text_restores_chinese_report(self):
+        from app.api.research import _repair_mojibake_text
+
+        assert _repair_mojibake_text("# GitHub å¼æºé¡¹ç®ææ¯è°ç æ¥å") == (
+            "# GitHub 开源项目技术调研报告"
+        )
+
     def test_iter_state_updates_keeps_plain_state_chunks(self):
         from app.api.research import _iter_state_updates
 
@@ -553,6 +560,17 @@ class TestAPIEndpoints:
         # For now, just verify the app exists
         assert app is not None
         assert app.title == "Agentic Deep Research System"
+
+    def test_json_responses_declare_utf8_charset(self):
+        """JSON responses should be explicit UTF-8 for Windows PowerShell clients."""
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        response = TestClient(app).get("/")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        assert "charset=utf-8" in response.headers["content-type"].lower()
 
     def test_research_request_validation(self):
         """Test ResearchRequest model validation."""

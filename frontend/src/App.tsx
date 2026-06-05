@@ -1,5 +1,5 @@
 /**
- * App.tsx - Xiaomi-style frontend for Agentic Deep Research System
+ * App.tsx - Xiaomi-style frontend for GitHub Repository Research Agent
  *
  * Design reference: Xiaomi official website
  * - Massive whitespace, minimal UI
@@ -49,7 +49,7 @@ function Header({
               <circle cx="8" cy="8" r="2" fill="white"/>
             </svg>
           </div>
-          <span className="text-base font-semibold text-xmgray-900 tracking-tight">DeepIntel</span>
+          <span className="text-base font-semibold text-xmgray-900 tracking-tight">GitHub Research Agent</span>
         </div>
 
         {/* Nav */}
@@ -90,20 +90,20 @@ function HeroSection({ onExplore, onDemo }: { onExplore: () => void; onDemo: () 
     <section className="min-h-[60vh] flex flex-col items-center justify-center text-center px-6 pt-24 pb-16">
       {/* Overline tag */}
       <div className="tag-orange mb-6 animate-fade-in">
-        Autonomous Research Agent
+        GitHub Repository Research Agent
       </div>
 
       {/* Main headline */}
       <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-xmgray-900 tracking-tight leading-[1.1] max-w-4xl animate-fade-up" style={{ animationDelay: '0.1s' }}>
         让 AI 自主完成
         <br />
-        <span className="text-xm-500">深度研究报告</span>
+        <span className="text-xm-500">开源项目技术调研</span>
       </h1>
 
       {/* Subheadline */}
       <p className="mt-6 text-lg text-xmgray-500 max-w-xl leading-relaxed animate-fade-up" style={{ animationDelay: '0.2s' }}>
-        输入研究主题，DeepIntel 自动规划研究路径、抓取网页、分析证据、
-        校验幻觉，生成带引用的结构化报告。
+        输入一个或多个 GitHub 仓库 URL，系统自动采集证据、评分排序、
+        生成带引用的中文技术选型报告。
       </p>
 
       {/* CTA */}
@@ -269,7 +269,7 @@ function App() {
             {/* Footer */}
             <footer className="border-t border-xmgray-100 py-8 text-center">
               <p className="text-sm text-xmgray-400">
-                DeepIntel · Agentic Deep Research System · Powered by LangGraph + Qwen
+                GitHub Research Agent · Evidence-backed repository research · Powered by LangGraph + Qwen
               </p>
             </footer>
           </>

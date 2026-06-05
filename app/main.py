@@ -112,6 +112,15 @@ def create_app() -> FastAPI:
     # GZip compression
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+    @app.middleware("http")
+    async def add_utf8_charset_to_json(request, call_next):
+        """Make JSON responses unambiguous for Windows PowerShell and legacy clients."""
+        response = await call_next(request)
+        content_type = response.headers.get("content-type", "")
+        if content_type.startswith("application/json") and "charset=" not in content_type.lower():
+            response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
+
     # Register routes
     app.include_router(health_router)
     app.include_router(research_router)
