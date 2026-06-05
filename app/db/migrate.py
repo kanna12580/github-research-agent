@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS research_sessions (
     final_report TEXT,
     citations JSONB DEFAULT '[]',
     agent_trace JSONB DEFAULT '[]',
+    tool_histories JSONB DEFAULT '[]',
     error_message TEXT,
     revision_count INTEGER DEFAULT 0,
     total_tokens INTEGER DEFAULT 0,

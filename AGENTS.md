@@ -242,6 +242,18 @@ User-reported issues to address:
 4. Some baseline features are less relevant to the vertical GitHub workflow.
    Do not delete them immediately, but visually de-emphasize generic RAG/docs
    functions unless they help the GitHub research demo.
+5. Reports restored from history can lose important demo context: the GitHub
+   technical dashboard, Agent trace and tool trace may appear empty because
+   only the final report/citations are restored.
+6. The References section is visually dense when citation entries run together.
+   Each `[citation:N]` reference should render on its own line in the frontend
+   report view and in committed demo preview artifacts.
+7. Citation counts must reflect the citations actually used or displayed in
+   the report. If the backend stores 30 collected sources but the report only
+   references `[citation:1]` through `[citation:16]`, the UI should not present
+   the number as 30 report references without clarification.
+8. Deterministic Scorecard evidence should be rendered as a clear table or
+   structured score panel instead of dense prose when available.
 
 Implementation order:
 
@@ -293,6 +305,45 @@ Implementation order:
    - Avoid deleting baseline modules until GitHub-specific history, reliability
      and branding are complete and tested.
 
+5. History restore display completeness:
+   - Extend the research result endpoint or add a dedicated detail endpoint so
+     restored sessions include the persisted Agent trace, tool histories,
+     GitHub repositories, scorecards and comparison/ranking state needed by the
+     frontend.
+   - Persist `tool_histories` alongside `agent_trace`; frontend history restore
+     should convert both shapes into the same SSE-style events used by the live
+     trace panels.
+   - If older sessions do not have full structured state, reconstruct a best
+     effort GitHub dashboard from the report text and citations: detected repo
+     URLs, recommendation, citation-backed references, score tables and a small
+     restored execution trace that clearly comes from historical data.
+   - Ensure `GitHubResearchSummary`, `AgentTrace` and `ToolTrace` show either
+     restored data or an explicit "not captured for this historical run" message
+     instead of looking broken or empty.
+   - Add tests for result/history response shape so future changes do not drop
+     trace/tool/GitHub state again.
+
+6. Report references and citation count normalization:
+   - Parse used citation ids from the final report and expose both
+     `used_citation_count` and `collected_citation_count` when they differ.
+   - In the frontend history panel and report header, prefer the count of
+     citations used in the report, and label collected sources separately if
+     useful.
+   - Render the `## References` section as a readable list where every
+     `[citation:N]` entry starts on a new visual line.
+   - Keep the committed demo report and HTML preview consistent with this
+     rendering rule.
+
+7. Deterministic scorecard visualization:
+   - Render deterministic scorecard evidence as a table or score matrix with
+     dimensions such as reproducibility, project depth, stack breadth,
+     extensibility, engineering quality and risk control.
+   - Prefer structured scorecards from workflow state. If only report text is
+     available, parse the Markdown score table or scorecard citation evidence as
+     a fallback.
+   - Highlight the top-ranked repository and keep score numbers deterministic;
+     the LLM may explain scores but must not reorder or invent them.
+
 Acceptance criteria:
 
 - A user can start a GitHub research task, refresh the page and still find the
@@ -301,6 +352,9 @@ Acceptance criteria:
 - A stalled report state gives concrete next diagnostic actions.
 - Frontend copy and visual identity describe the GitHub repository research
   product, while docs still preserve DeepIntel reproduction attribution.
+- Restored historical reports still show useful GitHub dashboard context,
+  trace/tool state, clear reference formatting, accurate citation counts and
+  readable scorecard tables.
 - `npm run build` passes after frontend changes.
 - GitHub compare smoke test still returns a three-repository ranking with
   `wblxr408/DeepIntel` as the fixed demo recommendation unless upstream

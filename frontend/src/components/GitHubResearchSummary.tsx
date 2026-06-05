@@ -66,8 +66,38 @@ function parseRecommendationFromReport(report: string): string | null {
   if (match) {
     return match[1]
   }
-  const chineseMatch = report.match(/推荐(?:仓库|项目)[：:]\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/)
+  const chineseMatch = report.match(/推荐(?:仓库|项目|优先选择)[：:\s*]*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/)
   return chineseMatch?.[1] || null
+}
+
+function parseRankingFromReportTable(report: string): RankingItem[] {
+  const tableLines = report
+    .split(/\r?\n/)
+    .filter(line => /^\|\s*[^|]+\/[^|]+\s*\|/.test(line))
+
+  const ranking: RankingItem[] = []
+  tableLines.forEach((line, index) => {
+      const cells = line.split('|').map(cell => cell.trim()).filter(Boolean)
+      if (cells.length < 7) {
+        return
+      }
+      const weightedScoreMatch = cells[cells.length - 1].match(/(\d+(?:\.\d+)?)/)
+      ranking.push({
+        rank: index + 1,
+        full_name: cells[0].replace(/\*\*/g, ''),
+        weighted_score: weightedScoreMatch ? Number(weightedScoreMatch[1]) : undefined,
+        dimension_scores: {
+          reproducibility: Number(cells[1]) || 0,
+          project_depth: Number(cells[2]) || 0,
+          stack_breadth: Number(cells[3]) || 0,
+          extensibility: Number(cells[4]) || 0,
+          engineering_quality: Number(cells[5]) || 0,
+          risk_control: Number(cells[6]) || 0,
+        },
+        recommendation: cells[cells.length - 1],
+      })
+    })
+  return ranking.filter(item => item.full_name.includes('/'))
 }
 
 function formatScore(value?: number): string {
@@ -103,16 +133,17 @@ function GitHubResearchSummary({
 }: GitHubResearchSummaryProps) {
   const urls = extractGithubUrls(`${query}\n${report}`)
   const comparison = parseComparisonFromEvents(events)
-  const ranking = comparison?.ranking || []
-  const recommended = comparison?.recommended_repository || parseRecommendationFromReport(report)
+  const ranking = comparison?.ranking?.length ? comparison.ranking : parseRankingFromReportTable(report)
+  const recommended = comparison?.recommended_repository || parseRecommendationFromReport(report) || ranking[0]?.full_name || null
   const githubToolEvents = events.filter(event => {
     const toolName = String(event.data.tool_name || event.data.tool || '')
     const agent = String(event.data.agent || '')
     return agent === 'github' || toolName.includes('github')
   })
   const comparisonEvent = events.find(event => event.data.github_comparison)
+  const hasRanking = Boolean(comparisonEvent || ranking.length > 0)
 
-  if (urls.length === 0 && !comparison && !recommended) {
+  if (urls.length === 0 && !comparison && !recommended && ranking.length === 0) {
     return null
   }
 
@@ -126,7 +157,7 @@ function GitHubResearchSummary({
           </p>
         </div>
         <span className="tag-orange text-[11px]">
-          {comparisonEvent ? '已完成排序' : streaming ? '采集中' : '待排序'}
+          {hasRanking ? '已恢复排序' : streaming ? '采集中' : '待排序'}
         </span>
       </div>
 

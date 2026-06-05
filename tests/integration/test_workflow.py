@@ -283,9 +283,10 @@ class TestResearchResultNormalization:
             "id": "test-session",
             "user_query": "Test query",
             "status": "completed",
-            "final_report": "report",
+            "final_report": "report [citation:1]",
             "citations": {"citation_id": "citation:1", "source_url": "https://example.com"},
             "agent_trace": [],
+            "tool_histories": [],
             "created_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:00:00"),
             "completed_at": None,
         }
@@ -314,6 +315,10 @@ class TestResearchResultNormalization:
             response = await get_research_result("test-session")
 
         assert response["citations"] == [{"citation_id": "citation:1", "source_url": "https://example.com"}]
+        assert response["used_citation_ids"] == ["citation:1"]
+        assert response["used_citation_count"] == 1
+        assert response["collected_citation_count"] == 1
+        assert response["tool_histories"] == []
 
     @pytest.mark.asyncio
     async def test_list_research_sessions_returns_recent_summaries(self):
@@ -323,7 +328,7 @@ class TestResearchResultNormalization:
             "id": "test-session",
             "user_query": "Compare GitHub repos",
             "status": "completed",
-            "final_report": "A" * 300,
+            "final_report": ("A" * 120) + " [citation:1] " + ("B" * 180),
             "citations": [{"citation_id": "citation:1"}],
             "created_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:00:00"),
             "updated_at": SimpleNamespace(isoformat=lambda: "2026-05-23T00:01:00"),
@@ -353,8 +358,11 @@ class TestResearchResultNormalization:
 
         assert len(response) == 1
         assert response[0].session_id == "test-session"
-        assert response[0].citation_count == 3
-        assert response[0].report_preview == "A" * 240
+        assert response[0].citation_count == 1
+        assert response[0].used_citation_count == 1
+        assert response[0].collected_citation_count == 3
+        assert response[0].report_preview is not None
+        assert response[0].report_preview.startswith("A" * 120)
 
 
 class TestGraphCompilation:

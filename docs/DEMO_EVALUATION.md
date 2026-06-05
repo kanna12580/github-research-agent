@@ -24,11 +24,12 @@ Compare these GitHub repositories for resume/interview reproduction suitability 
 
 本轮已在配置 `GITHUB_TOKEN` 后完成一次真实端到端 Demo。
 
-- Session ID: `e3e8efd4-fe95-4d51-b2e3-e149fdee299a`
+- Session ID: `3de6c43c-c0d8-4631-8740-909dfa3db202`
 - 状态：`completed`
-- 报告长度：`6891` 字符
-- 引用数量：`30`
-- 生成时间：`2026-06-04 16:38:56 +08:00`
+- 报告长度：`7317` 字符
+- 报告引用：`16`
+- 采集来源：`30`
+- 生成时间：`2026-06-04 22:03:13 +08:00`
 
 保存产物：
 

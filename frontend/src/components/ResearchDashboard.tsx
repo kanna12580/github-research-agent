@@ -29,7 +29,11 @@ interface ResearchResult {
     source_title: string
     source_type: string
   }> | Record<string, unknown> | null
+  used_citation_ids?: string[]
+  used_citation_count?: number
+  collected_citation_count?: number
   agent_trace: unknown[]
+  tool_histories?: unknown[]
   created_at: string
   completed_at: string | null
 }
@@ -42,6 +46,8 @@ interface ResearchSessionSummary {
   updated_at?: string | null
   completed_at?: string | null
   citation_count?: number
+  used_citation_count?: number
+  collected_citation_count?: number
   report_preview?: string | null
 }
 
@@ -120,6 +126,147 @@ function statusClass(status: string): string {
   if (status === 'running') return 'bg-xm-50 text-xm-700 border-xm-100'
   if (status === 'failed') return 'bg-red-50 text-red-700 border-red-100'
   return 'bg-xmgray-50 text-xmgray-500 border-xmgray-100'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function restoredTraceToEvents(trace: unknown[]): SSEvent[] {
+  return trace.filter(isRecord).map((item, index) => {
+    const eventType = String(item.event_type || item.type || 'trace')
+    const data: Record<string, unknown> = { ...item }
+    delete data.event_type
+    return {
+      type: eventType,
+      data,
+      timestamp: typeof item.timestamp === 'string' ? item.timestamp : new Date().toISOString(),
+      restored: true,
+      id: `restored-${index}`,
+    } as SSEvent & { restored: boolean; id: string }
+  })
+}
+
+function restoredToolHistoriesToEvents(histories: unknown[]): SSEvent[] {
+  const events: SSEvent[] = []
+  histories.filter(isRecord).forEach((history, historyIndex) => {
+    const agent = String(history.agent_type || history.agent || '')
+    const calls = Array.isArray(history.tool_calls) ? history.tool_calls : []
+    calls.filter(isRecord).forEach((call, callIndex) => {
+      const callId = String(call.call_id || `restored-tool-${historyIndex}-${callIndex}`)
+      const toolName = String(call.tool_name || call.tool || 'tool')
+      const startedAt = typeof call.started_at === 'string' ? call.started_at : undefined
+      const completedAt = typeof call.completed_at === 'string' ? call.completed_at : startedAt
+      const baseData: Record<string, unknown> = {
+        call_id: callId,
+        agent,
+        tool_name: toolName,
+        args: isRecord(call.args) ? call.args : {},
+        restored: true,
+      }
+      events.push({
+        type: 'tool_start',
+        data: baseData,
+        timestamp: startedAt,
+      })
+      events.push({
+        type: call.status === 'error' ? 'tool_error' : 'tool_complete',
+        data: {
+          ...baseData,
+          status: call.status || 'success',
+          duration_ms: call.duration_ms,
+          result_summary: call.result_summary,
+          error: call.error,
+        },
+        timestamp: completedAt,
+      })
+    })
+  })
+  return events
+}
+
+function extractGithubRepoNames(text: string): string[] {
+  const matches = Array.from(text.matchAll(/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/g))
+  return Array.from(new Set(matches.map(match => match[1].replace(/\.git$/, ''))))
+}
+
+function fallbackHistoryEvents(result?: ResearchResult): SSEvent[] {
+  if (!result) return []
+  const citations = Array.isArray(result.citations) ? result.citations : []
+  const repoNames = extractGithubRepoNames(`${result.query}\n${result.report || ''}\n${
+    citations.map(citation => citation.source_url).join('\n')
+  }`)
+  const timestamp = result.completed_at || result.created_at || new Date().toISOString()
+  const events: SSEvent[] = []
+
+  if (repoNames.length > 0) {
+    events.push({
+      type: 'agent_start',
+      data: {
+        agent: 'github',
+        content: `从历史报告恢复：检测到 ${repoNames.length} 个 GitHub 仓库`,
+        restored: true,
+      },
+      timestamp,
+    })
+    repoNames.forEach((repoName, index) => {
+      const callId = `fallback-github-${index}`
+      events.push({
+        type: 'tool_start',
+        data: {
+          call_id: callId,
+          agent: 'github',
+          tool_name: 'github_repository_collect',
+          args: { repository: repoName },
+          restored: true,
+        },
+        timestamp,
+      })
+      events.push({
+        type: 'tool_complete',
+        data: {
+          call_id: callId,
+          agent: 'github',
+          tool_name: 'github_repository_collect',
+          status: 'success',
+          result_summary: `历史报告包含 ${repoName} 的引用证据`,
+          restored: true,
+        },
+        timestamp,
+      })
+    })
+    events.push({
+      type: 'agent_complete',
+      data: {
+        agent: 'github',
+        content: 'GitHub 仓库证据已从历史报告和引用恢复',
+        restored: true,
+      },
+      timestamp,
+    })
+  }
+
+  if (result.report) {
+    events.push({
+      type: 'agent_complete',
+      data: {
+        agent: 'report',
+        content: `历史报告已恢复：${result.report.length} 字符，${displayCitationCount(result)} 条报告引用`,
+        restored: true,
+      },
+      timestamp,
+    })
+  }
+
+  return events
+}
+
+function displayCitationCount(result?: ResearchResult): number {
+  if (!result) return 0
+  if (typeof result.used_citation_count === 'number' && result.used_citation_count > 0) {
+    return result.used_citation_count
+  }
+  return Array.isArray(result.citations) ? result.citations.length : 0
 }
 
 function ResearchDashboard({ onBack }: ResearchDashboardProps) {
@@ -241,28 +388,57 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
         status: result.status,
         created_at: result.created_at,
         completed_at: result.completed_at,
-        citation_count: Array.isArray(result.citations) ? result.citations.length : 0,
+        citation_count: displayCitationCount(result),
+        used_citation_count: result.used_citation_count || 0,
+        collected_citation_count: result.collected_citation_count || (
+          Array.isArray(result.citations) ? result.citations.length : 0
+        ),
         report_preview: result.report ? result.report.slice(0, 240) : null,
       })
     }
   }, [result, upsertLocalHistory])
 
+  const restoredEvents = useMemo(
+    () => restoredTraceToEvents(Array.isArray(result?.agent_trace) ? result.agent_trace : []),
+    [result?.agent_trace],
+  )
+  const restoredToolEvents = useMemo(
+    () => restoredToolHistoriesToEvents(Array.isArray(result?.tool_histories) ? result.tool_histories : []),
+    [result?.tool_histories],
+  )
+  const fallbackEvents = useMemo(
+    () => restoredEvents.length === 0 && restoredToolEvents.length === 0
+      ? fallbackHistoryEvents(result)
+      : [],
+    [restoredEvents.length, restoredToolEvents.length, result],
+  )
+  const hasLiveEvents = events.some((event: SSEvent) =>
+    !['connected', 'disconnected'].includes(event.type)
+  )
+  const isRestoredCompletedSession = Boolean(result) && !isStreaming && result?.status !== 'running'
+  const restoredDisplayEvents = [...restoredEvents, ...restoredToolEvents, ...fallbackEvents]
+  const displayEvents = isRestoredCompletedSession
+    ? restoredDisplayEvents
+    : hasLiveEvents
+      ? events
+      : restoredDisplayEvents
+
   // Build report from streaming chunks
-  const streamedReport = events
+  const streamedReport = displayEvents
     .filter((e: SSEvent) => e.type === 'report_chunk')
     .map((e: SSEvent) => String(e.data.chunk || ''))
     .join('')
 
   // Collect stats from events
-  const agentEvents = events.filter((e: SSEvent) =>
+  const agentEvents = displayEvents.filter((e: SSEvent) =>
     ['agent_start', 'agent_complete', 'agent_end'].includes(e.type)
   )
-  const toolEvents = events.filter((e: SSEvent) =>
+  const toolEvents = displayEvents.filter((e: SSEvent) =>
     ['tool_start', 'tool_call', 'tool_complete', 'tool_result', 'tool_error'].includes(e.type)
   )
 
   // Latest DAG node status
-  const dagNodeEvents = events.filter((e: SSEvent) => e.type === 'agent_start')
+  const dagNodeEvents = displayEvents.filter((e: SSEvent) => e.type === 'agent_start')
   const currentNode = dagNodeEvents.length > 0
     ? (dagNodeEvents[dagNodeEvents.length - 1].data as { agent?: string })?.agent || ''
     : ''
@@ -330,11 +506,15 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
 
   const displayReport = streamedReport || result?.report || ''
   const normalizedCitations = Array.isArray(result?.citations) ? result.citations : []
+  const usedCitationIds = Array.isArray(result?.used_citation_ids) ? result.used_citation_ids : []
+  const reportCitations = usedCitationIds.length > 0
+    ? normalizedCitations.filter(c => usedCitationIds.includes(c.citation_id))
+    : normalizedCitations
   const showConfirmationState = sessionStatus === 'pending_confirmation'
   const hasVisibleEvents = events.some((event: SSEvent) => event.type !== 'connected')
   const isConnectingStream = isStreaming && (sseStatus === 'connecting' || sseStatus === 'connected') && !hasVisibleEvents
   const canRefetchResult = Boolean(activeSessionId)
-  const workflowErrorEvent = [...events].reverse().find((event: SSEvent) => event.type === 'workflow_error')
+  const workflowErrorEvent = [...displayEvents].reverse().find((event: SSEvent) => event.type === 'workflow_error')
   const isFailed = sessionStatus === 'failed'
   const workflowErrorText = String(workflowErrorEvent?.data.error || workflowErrorEvent?.data.message || '')
   const isGithubTokenLikelyMissing = /github|rate limit|permission|403|api/i.test(workflowErrorText)
@@ -550,7 +730,10 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
                       </p>
                     )}
                     <div className="mt-2 text-[11px] text-xmgray-400">
-                      引用：{item.citation_count || 0}
+                      报告引用：{item.used_citation_count || item.citation_count || 0}
+                      {item.collected_citation_count && item.collected_citation_count !== (item.used_citation_count || item.citation_count || 0)
+                        ? ` / 采集来源：${item.collected_citation_count}`
+                        : ''}
                     </div>
                   </button>
                 ))}
@@ -665,7 +848,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
               </span>
             </div>
             <div className="p-4 h-[420px] overflow-y-auto">
-              <AgentTrace events={events} />
+              <AgentTrace events={displayEvents} />
             </div>
           </div>
 
@@ -683,7 +866,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
               <span className="text-xs text-xmgray-400">{toolEvents.length} 次</span>
             </div>
             <div className="p-4 h-44 overflow-y-auto">
-              <ToolTrace events={events} />
+              <ToolTrace events={displayEvents} />
             </div>
           </div>
         </div>
@@ -692,7 +875,7 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
         <div className="lg:col-span-8 space-y-4">
           <GitHubResearchSummary
             query={result?.query || query}
-            events={events}
+            events={displayEvents}
             report={displayReport}
             streaming={isStreaming}
           />
@@ -715,15 +898,20 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
                     <span className="status-dot streaming mr-1" />流式生成中
                   </span>
                 )}
-                {normalizedCitations.length > 0 && (
-                  <span className="tag text-[11px]">{normalizedCitations.length} 条引用</span>
+                {reportCitations.length > 0 && (
+                  <span className="tag text-[11px]">
+                    {displayCitationCount(result)} 条报告引用
+                    {result?.collected_citation_count && result.collected_citation_count !== displayCitationCount(result)
+                      ? ` / ${result.collected_citation_count} 条采集来源`
+                      : ''}
+                  </span>
                 )}
               </div>
             </div>
             <div className="p-6 min-h-[500px] max-h-[680px] overflow-y-auto">
               <ReportPreview
                 report={displayReport}
-                citations={normalizedCitations}
+                citations={reportCitations}
                 streaming={isStreaming}
                 emptyTitle={emptyReportTitle}
                 emptyDescription={emptyReportDescription}
@@ -732,15 +920,20 @@ function ResearchDashboard({ onBack }: ResearchDashboardProps) {
           </div>
 
           {/* Citations panel */}
-          {normalizedCitations.length > 0 && (
+          {reportCitations.length > 0 && (
             <div className="card p-0 overflow-hidden">
               <div className="px-5 py-4 border-b border-xmgray-100">
                 <h3 className="text-sm font-medium text-xmgray-700">
                   引用来源
                 </h3>
+                {result?.collected_citation_count && result.collected_citation_count !== reportCitations.length && (
+                  <p className="mt-1 text-xs text-xmgray-400">
+                    当前报告实际使用 {reportCitations.length} 条引用；本次工作流共采集 {result.collected_citation_count} 条来源。
+                  </p>
+                )}
               </div>
               <div className="p-5 max-h-52 overflow-y-auto space-y-2">
-                {normalizedCitations.map((c, i) => (
+                {reportCitations.map((c, i) => (
                   <a
                     key={i}
                     href={c.source_url}

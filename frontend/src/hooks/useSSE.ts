@@ -39,6 +39,7 @@ export function useSSE(sessionId: string | null): {
 
   useEffect(() => {
     if (!sessionId) {
+      setEvents([])
       setStatus('disconnected')
       setError(null)
       completedRef.current = false
@@ -51,6 +52,7 @@ export function useSSE(sessionId: string | null): {
     }
 
     setStatus('connecting')
+    setEvents([])
     setError(null)
     completedRef.current = false
 

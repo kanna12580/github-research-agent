@@ -121,11 +121,13 @@ async def init_db() -> asyncpg.Pool:
                 final_report TEXT,
                 citations JSONB DEFAULT '[]',
                 agent_trace JSONB DEFAULT '[]',
+                tool_histories JSONB DEFAULT '[]',
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW(),
                 completed_at TIMESTAMP
             )
         """)
+        await conn.execute("ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS tool_histories JSONB DEFAULT '[]'")
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS citations (

@@ -153,6 +153,14 @@ def _repair_citation_text(citation: dict[str, Any]) -> dict[str, Any]:
     return repaired
 
 
+def _used_citation_ids(report: str | None) -> list[str]:
+    """Return citation ids that are actually referenced by the final report."""
+    if not report:
+        return []
+    ids = {f"citation:{match}" for match in re.findall(r"\[citation:(\d+)\]", report)}
+    return sorted(ids, key=lambda item: int(item.split(":", 1)[1]))
+
+
 # ==============================================================
 # Request/Response Models
 # ==============================================================
@@ -205,6 +213,8 @@ class ResearchSessionSummary(BaseModel):
     updated_at: str | None = None
     completed_at: str | None = None
     citation_count: int = 0
+    used_citation_count: int = 0
+    collected_citation_count: int = 0
     report_preview: str | None = None
 
 
@@ -419,8 +429,10 @@ async def list_research_sessions(
     for row in rows:
         citations = _normalize_citations(row["citations"])
         stored_citation_count = int(row["stored_citation_count"] or 0)
-        citation_count = stored_citation_count or len(citations)
+        collected_citation_count = stored_citation_count or len(citations)
         final_report = _repair_mojibake_text(row["final_report"] or "")
+        used_citation_count = len(_used_citation_ids(final_report))
+        citation_count = used_citation_count or collected_citation_count
         report_preview = final_report[:240] if final_report else None
         summaries.append(
             ResearchSessionSummary(
@@ -431,6 +443,8 @@ async def list_research_sessions(
                 updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
                 completed_at=row["completed_at"].isoformat() if row["completed_at"] else None,
                 citation_count=citation_count,
+                used_citation_count=used_citation_count,
+                collected_citation_count=collected_citation_count,
                 report_preview=report_preview,
             )
         )
@@ -444,7 +458,7 @@ async def get_research_result(session_id: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT id, user_query, status, final_report, citations, agent_trace, created_at, completed_at
+            SELECT id, user_query, status, final_report, citations, agent_trace, tool_histories, created_at, completed_at
             FROM research_sessions
             WHERE id = $1::uuid
             """,
@@ -469,14 +483,20 @@ async def get_research_result(session_id: str):
         if citation_rows
         else [_repair_citation_text(citation) for citation in _normalize_citations(row["citations"])]
     )
+    report = _repair_mojibake_text(row["final_report"])
+    used_citation_ids = _used_citation_ids(report)
 
     return {
         "session_id": str(row["id"]),
         "query": row["user_query"],
         "status": row["status"],
-        "report": _repair_mojibake_text(row["final_report"]),
+        "report": report,
         "citations": citations,
-        "agent_trace": row["agent_trace"],
+        "used_citation_ids": used_citation_ids,
+        "used_citation_count": len(used_citation_ids),
+        "collected_citation_count": len(citations),
+        "agent_trace": row["agent_trace"] or [],
+        "tool_histories": row["tool_histories"] or [],
         "created_at": row["created_at"].isoformat(),
         "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
     }
@@ -600,9 +620,10 @@ async def run_research_workflow(
                             final_report = $9,
                             citations = $10::jsonb,
                             agent_trace = $11::jsonb,
-                            updated_at = $12,
-                            completed_at = $12
-                        WHERE id = $13::uuid
+                            tool_histories = $12::jsonb,
+                            updated_at = $13,
+                            completed_at = $13
+                        WHERE id = $14::uuid
                         """,
                         final_state.get("status", TaskStatus.COMPLETED.value),
                         dumps_json(final_state.get("guardrail_decision")),
@@ -615,6 +636,7 @@ async def run_research_workflow(
                         final_state.get("final_report", ""),
                         dumps_json(citations),
                         dumps_json(final_state.get("agent_trace", [])),
+                        dumps_json(final_state.get("tool_histories", [])),
                         completed_at,
                         session_id,
                     )
